@@ -1,0 +1,6 @@
+{
+  "name": "Main Checkout Page",
+  "description": "Dynamic, responsive Vinted-style main checkout page with order summary, address management, delivery options, carrier selection, and secure payment.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
