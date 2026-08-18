@@ -36,6 +36,8 @@ import { CreditCard, ChevronRight } from 'lucide-react';
 
 type ViewMode = 'checkout' | 'address' | 'payment_methods' | 'pickup_map' | 'admin';
 
+import { saveOrderToSupabase } from './lib/supabase';
+
 // Determine initial view based on browser URL (/admin or /)
 const getInitialView = (): ViewMode => {
   if (typeof window !== 'undefined') {
@@ -211,6 +213,18 @@ export default function App() {
     const generatedOrderNum = `VIN-${Math.floor(100000 + Math.random() * 900000)}`;
 
     try {
+      // 1. Direct persistence to Supabase if configured in Netlify
+      await saveOrderToSupabase({
+        orderNumber: generatedOrderNum,
+        productTitle: product.title,
+        deliveryType,
+        pickupPoint: selectedPickupPoint,
+        shippingAddress: selectedAddress,
+        paymentMethod: selectedPayment,
+        pricing: pricingBreakdown,
+      });
+
+      // 2. Server persistence fallback
       const response = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
