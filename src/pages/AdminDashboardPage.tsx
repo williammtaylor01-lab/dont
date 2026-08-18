@@ -27,7 +27,6 @@ import {
   getOrdersFromSupabase,
   deleteOrderFromSupabase,
   isSupabaseConfigured,
-  testSupabaseConnection,
 } from '../lib/supabase';
 
 interface AdminDashboardPageProps {
@@ -55,11 +54,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [activeOrder, setActiveOrder] = useState<AdminOrderRecord | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [actionSuccessMsg, setActionSuccessMsg] = useState('');
-  const [connectionStatus, setConnectionStatus] = useState<{
-    checked: boolean;
-    connected: boolean;
-    message: string;
-  }>({ checked: false, connected: false, message: '' });
 
   // Perform Login check against Supabase or backend API
   const handleLogin = async (e: React.FormEvent) => {
@@ -124,16 +118,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setPasswordInput('');
   };
 
-  // Run Supabase connection test
-  const checkConnection = async () => {
-    const res = await testSupabaseConnection();
-    setConnectionStatus({
-      checked: true,
-      connected: res.connected,
-      message: res.message,
-    });
-  };
-
   // Fetch orders combining Supabase, LocalStorage, and Server API
   const fetchOrders = async () => {
     setIsLoading(true);
@@ -176,7 +160,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   useEffect(() => {
     if (isAuthenticated) {
       fetchOrders();
-      checkConnection();
     }
   }, [isAuthenticated]);
 
@@ -441,39 +424,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
       {/* Main Workspace */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 space-y-5">
-        {/* Database Status Banner */}
-        <div className={`p-3 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs ${
-          connectionStatus.connected
-            ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-            : 'bg-amber-50 border-amber-200 text-amber-900'
-        }`}>
-          <div className="flex items-center gap-2">
-            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-              connectionStatus.connected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
-            }`} />
-            <div>
-              <span className="font-bold">
-                {connectionStatus.connected ? 'Supabase Live Database Active' : 'Local Storage Fail-Safe Active'}
-              </span>
-              <span className="text-gray-600 block sm:inline sm:ml-2">
-                {connectionStatus.connected
-                  ? 'All customer entries are automatically stored in your Supabase `orders` table.'
-                  : connectionStatus.message || 'Submissions are stored in browser memory & local storage.'}
-              </span>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={async () => {
-              await checkConnection();
-              await fetchOrders();
-            }}
-            className="px-2.5 py-1 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg text-gray-800 font-semibold cursor-pointer shrink-0 transition-colors shadow-2xs"
-          >
-            Test Connection & Sync
-          </button>
-        </div>
-
         {actionSuccessMsg && (
           <div className="p-3 bg-teal-50 border border-teal-200 text-teal-800 text-xs rounded-xl flex items-center gap-2">
             <Check className="w-4 h-4 text-teal-600 shrink-0" />

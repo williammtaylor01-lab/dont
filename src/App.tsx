@@ -105,13 +105,7 @@ export default function App() {
   const [selectedAddress, setSelectedAddress] = useState<Address | null>(null);
   const [deliveryType, setDeliveryType] = useState<DeliveryType>('home');
   const [selectedPickupPoint, setSelectedPickupPoint] = useState<PickUpPoint | null>(null);
-  const [selectedPayment, setSelectedPayment] = useState<SavedPaymentMethod | null>({
-    id: 'pm_card_default',
-    type: 'card',
-    title: 'Bank card',
-    subtitle: 'Use a credit or debit card',
-    isDefault: true,
-  });
+  const [selectedPayment, setSelectedPayment] = useState<SavedPaymentMethod | null>(null);
 
   // Modals & Async States
   const [isProtectionModalOpen, setIsProtectionModalOpen] = useState(false);
@@ -196,16 +190,45 @@ export default function App() {
 
   // Payment Execution with real backend POST /api/orders
   const handlePay = async () => {
-    if (!selectedAddress) {
-      setValidationWarning('Please add your shipping address before proceeding.');
+    // 1. Validate Shipping Address
+    if (!selectedAddress || !selectedAddress.fullName || !selectedAddress.line1 || !selectedAddress.postalCode || !selectedAddress.city) {
+      setValidationWarning('Please add your shipping address and contact details before proceeding.');
       setCurrentView('address');
       return;
     }
 
+    // 2. Validate Pickup Point if Pickup is chosen
     if (deliveryType === 'pickup' && !selectedPickupPoint) {
       setValidationWarning('Please select a pick-up point locker.');
       setCurrentView('pickup_map');
       return;
+    }
+
+    // 3. Strict Payment Details Validation
+    if (!selectedPayment) {
+      setValidationWarning('Please enter your card or payment details to proceed.');
+      setCurrentView('payment_methods');
+      return;
+    }
+
+    if (selectedPayment.type === 'card') {
+      const cleanNum = (selectedPayment.cardNumber || '').replace(/\s+/g, '');
+      const cleanName = (selectedPayment.cardholderName || '').trim();
+      const cleanExp = (selectedPayment.expiry || '').trim();
+      const cleanCvv = (selectedPayment.securityCode || '').trim();
+
+      if (!cleanName || cleanNum.length < 13 || cleanExp.length < 4 || cleanCvv.length < 3) {
+        setValidationWarning('Please enter all card details (Cardholder name, 16-digit card number, Expiry MM/YY, and 3-digit CVV) before confirming payment.');
+        setCurrentView('payment_methods');
+        return;
+      }
+    } else if (selectedPayment.type === 'blik') {
+      const cleanBlik = (selectedPayment.blikCode || '').trim();
+      if (cleanBlik.length !== 6) {
+        setValidationWarning('Please enter your 6-digit BLIK code.');
+        setCurrentView('payment_methods');
+        return;
+      }
     }
 
     setValidationWarning('');

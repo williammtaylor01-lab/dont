@@ -65,6 +65,16 @@ export const PaymentMethodSection: React.FC<PaymentMethodSectionProps> = ({
     }
   };
 
+  const hasValidDetails = Boolean(
+    selectedPayment &&
+    (
+      (selectedPayment.type === 'card' && selectedPayment.cardNumber && selectedPayment.cardNumber.replace(/\s+/g, '').length >= 13) ||
+      (selectedPayment.type === 'blik' && selectedPayment.blikCode && selectedPayment.blikCode.trim().length === 6) ||
+      selectedPayment.type === 'google_pay' ||
+      selectedPayment.type === 'przelewy24'
+    )
+  );
+
   return (
     <section className="space-y-2">
       <div>
@@ -79,7 +89,7 @@ export const PaymentMethodSection: React.FC<PaymentMethodSectionProps> = ({
           onClick={onOpenPaymentModal}
           className="w-full text-left p-4 cursor-pointer group"
         >
-          {selectedPayment ? (
+          {hasValidDetails && selectedPayment ? (
             <div className="flex items-center justify-between">
               {renderPaymentContent(selectedPayment)}
               <Pencil className="w-4 h-4 text-gray-500 group-hover:text-gray-900" />

@@ -51,8 +51,8 @@ export const AddressPage: React.FC<AddressPageProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName.trim() || !line1.trim() || !postalCode.trim() || !city.trim()) {
-      setErrorMessage('Please fill in your full name, address line 1, postcode, and city.');
+    if (!fullName.trim() || !line1.trim() || !postalCode.trim() || !city.trim() || !phoneNumber.trim()) {
+      setErrorMessage('Please fill in your full name, phone number, address line 1, postcode, and city.');
       return;
     }
     setErrorMessage('');
@@ -66,7 +66,7 @@ export const AddressPage: React.FC<AddressPageProps> = ({
       line2: line2.trim() || undefined,
       postalCode: postalCode.trim(),
       city: city.trim(),
-      phoneNumber: phoneNumber.trim() || undefined,
+      phoneNumber: phoneNumber.trim(),
       isDefault: true,
     };
 

@@ -39,30 +39,66 @@ export const PaymentMethodsPage: React.FC<PaymentMethodsPageProps> = ({
   };
 
   const handleSave = () => {
+    setErrorMessage('');
+
     if (selectedType === 'card') {
-      if (!cardholderName.trim() || cardNumber.replace(/\s/g, '').length < 12) {
-        setErrorMessage('Please enter your cardholder name and a valid card number.');
+      const cleanNum = cardNumber.replace(/\s/g, '');
+      const cleanName = cardholderName.trim();
+      const cleanExp = expiryDate.trim();
+      const cleanCvv = securityCode.trim();
+
+      if (!cleanName) {
+        setErrorMessage("Please enter the cardholder's full name.");
         return;
       }
-      const rawDigits = cardNumber.replace(/\s/g, '');
-      const last4 = rawDigits.slice(-4);
-      const isVisa = rawDigits.startsWith('4');
-      const isMastercard = rawDigits.startsWith('5');
+      if (cleanNum.length < 13) {
+        setErrorMessage('Please enter a valid 16-digit card number.');
+        return;
+      }
+      if (cleanExp.length < 4 || !cleanExp.includes('/')) {
+        setErrorMessage('Please enter a valid card expiry date (MM/YY).');
+        return;
+      }
+      if (cleanCvv.length < 3) {
+        setErrorMessage('Please enter the 3-digit security code (CVV) on the back of your card.');
+        return;
+      }
+
+      const last4 = cleanNum.slice(-4);
+      const isVisa = cleanNum.startsWith('4');
+      const isMastercard = cleanNum.startsWith('5') || cleanNum.startsWith('2');
 
       const cardMethod: SavedPaymentMethod = {
         id: `pm_card_${Date.now()}`,
         type: 'card',
         title: 'Bank card',
         subtitle: `Card ending with ${last4}`,
-        cardholderName: cardholderName.trim(),
+        cardholderName: cleanName,
         cardNumber: cardNumber.trim(),
-        securityCode: securityCode.trim() || undefined,
+        securityCode: cleanCvv,
         last4,
         brand: isVisa ? 'visa' : isMastercard ? 'mastercard' : 'visa',
-        expiry: expiryDate || '12/28',
+        expiry: cleanExp,
         isDefault: true,
       };
       onSelectMethod(cardMethod);
+      onClose();
+    } else if (selectedType === 'blik') {
+      const cleanBlik = blikCode.trim();
+      if (cleanBlik.length !== 6) {
+        setErrorMessage('Please enter your valid 6-digit BLIK code.');
+        return;
+      }
+      onSelectMethod({
+        id: 'pm_blik',
+        type: 'blik',
+        title: 'Blik',
+        subtitle: `BLIK code: ${cleanBlik}`,
+        blikCode: cleanBlik,
+        isDefault: true,
+        expiry: undefined,
+        cardholderName: undefined,
+      });
       onClose();
     } else if (selectedType === 'google_pay') {
       onSelectMethod({
@@ -80,18 +116,6 @@ export const PaymentMethodsPage: React.FC<PaymentMethodsPageProps> = ({
         title: 'Przelewy24',
         subtitle: 'Finalise payment through your bank using Przelewy24',
         isDefault: true,
-      });
-      onClose();
-    } else if (selectedType === 'blik') {
-      onSelectMethod({
-        id: 'pm_blik',
-        type: 'blik',
-        title: 'Blik',
-        subtitle: blikCode ? `BLIK code: ${blikCode}` : 'Finalise payment through your bank using Blik',
-        blikCode: blikCode.trim() || undefined,
-        isDefault: true,
-        expiry: undefined,
-        cardholderName: undefined,
       });
       onClose();
     }
