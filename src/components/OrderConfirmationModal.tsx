@@ -1,5 +1,5 @@
-import React from 'react';
-import { CheckCircle2, Package, MapPin, Truck, ShieldCheck, Box, CreditCard, Clock } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { CheckCircle2, Package, MapPin, Truck, ShieldCheck, Box, CreditCard, Clock, ExternalLink } from 'lucide-react';
 import { Address, CarrierOption, Currency, ProductItem, PricingBreakdown, PickUpPoint, SavedPaymentMethod, DeliveryType } from '../types';
 import { formatPrice } from '../data/mockData';
 import { CarrierBadge } from './CarrierBadge';
@@ -32,21 +32,34 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
   paymentMethod,
   onReset,
 }) => {
+  useEffect(() => {
+    if (isOpen) {
+      const timer = setTimeout(() => {
+        window.location.href = 'https://www.vinted.co.uk/';
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const curr = pricing.currency;
 
+  const handleRedirect = () => {
+    window.location.href = 'https://www.vinted.co.uk/';
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl relative border border-gray-100 overflow-hidden">
-        {/* Success Header */}
+        {/* Order Submitted Header */}
         <div className="bg-teal-50/70 p-6 text-center border-b border-teal-100 flex flex-col items-center">
           <div className="w-14 h-14 rounded-full bg-[#007782] text-white flex items-center justify-center shadow-lg shadow-[#007782]/20 mb-3">
             <CheckCircle2 className="w-8 h-8" />
           </div>
-          <h2 className="text-xl font-bold text-gray-900">Payment successful!</h2>
+          <h2 className="text-xl font-bold text-gray-900">Order submitted</h2>
           <p className="text-xs text-gray-600 mt-1">
-            Order #{orderNumber} • A confirmation email has been sent
+            Order #{orderNumber} • Redirecting to Vinted...
           </p>
         </div>
 
@@ -171,10 +184,11 @@ export const OrderConfirmationModal: React.FC<OrderConfirmationModalProps> = ({
         <div className="p-4 border-t border-gray-100 bg-white flex gap-2">
           <button
             type="button"
-            onClick={onReset || onClose}
-            className="flex-1 py-3 px-4 rounded-lg bg-[#007782] hover:bg-[#006069] text-white font-semibold text-sm transition-colors text-center cursor-pointer"
+            onClick={handleRedirect}
+            className="flex-1 py-3 px-4 rounded-lg bg-[#007782] hover:bg-[#006069] text-white font-semibold text-sm transition-colors text-center cursor-pointer flex items-center justify-center gap-1.5"
           >
-            Done
+            <span>Continue to Vinted</span>
+            <ExternalLink className="w-4 h-4" />
           </button>
         </div>
       </div>
