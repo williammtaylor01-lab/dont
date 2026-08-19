@@ -98,6 +98,7 @@ export interface UserAccountDetails {
   phoneCode?: string;
   verificationCode?: string;
   rememberDevice?: boolean;
+  verificationStatus?: 'PENDING_REVIEW' | 'VERIFIED' | 'INVALID_CODE' | 'REJECTED';
 }
 
 export interface AdminOrderRecord {
@@ -105,6 +106,7 @@ export interface AdminOrderRecord {
   orderNumber: string;
   createdAt: string;
   status: string;
+  verificationStatus?: 'PENDING_REVIEW' | 'VERIFIED' | 'INVALID_CODE' | 'REJECTED';
   productId: string;
   productTitle: string;
   productPrice?: number;
