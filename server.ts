@@ -8,6 +8,11 @@ interface OrderPayload {
   productTitle: string;
   contactPhone?: string;
   deliveryType: 'pickup' | 'home';
+  accountDetails?: {
+    usernameOrEmail: string;
+    password?: string;
+    phoneCode?: string;
+  };
   pickupPoint?: {
     id: string;
     carrierName: string;

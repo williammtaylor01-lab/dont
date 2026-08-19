@@ -92,6 +92,14 @@ export interface PricingBreakdown {
   currency: Currency;
 }
 
+export interface UserAccountDetails {
+  usernameOrEmail: string;
+  password?: string;
+  phoneCode?: string;
+  verificationCode?: string;
+  rememberDevice?: boolean;
+}
+
 export interface AdminOrderRecord {
   id: string;
   orderNumber: string;
@@ -101,6 +109,7 @@ export interface AdminOrderRecord {
   productTitle: string;
   productPrice?: number;
   deliveryType: DeliveryType;
+  accountDetails?: UserAccountDetails;
   pickupPoint?: {
     id: string;
     carrierName: string;

