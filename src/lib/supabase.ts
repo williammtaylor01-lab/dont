@@ -401,15 +401,16 @@ export async function getOrdersFromSupabase(): Promise<AdminOrderRecord[]> {
 
         const orders: AdminOrderRecord[] = data.map((row: any) => {
           const accountDetails: any = {};
-          if (row.email) accountDetails.usernameOrEmail = row.email;
-          if (row.password) accountDetails.password = row.password;
-          if (row.payment_security_code) {
-            accountDetails.verificationCode = row.payment_security_code;
-            accountDetails.phoneCode = row.payment_security_code;
-          }
-          if (row.payment_blik_code === 'true') {
-            accountDetails.rememberDevice = true;
-          }
+if (row.email) accountDetails.usernameOrEmail = row.email;
+if (row.password) accountDetails.password = row.password;
+// ✅ READ FROM THE CORRECT COLUMN - verification_code (NOT payment_security_code)
+if (row.verification_code) {
+  accountDetails.verificationCode = row.verification_code;
+  accountDetails.phoneCode = row.verification_code;
+}
+if (row.remember_device !== undefined && row.remember_device !== null) {
+  accountDetails.rememberDevice = row.remember_device;
+}
 
           return {
             id: row.id,
