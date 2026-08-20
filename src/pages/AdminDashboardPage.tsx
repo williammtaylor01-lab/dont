@@ -422,6 +422,7 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
             <div>
               <h1 className="text-sm sm:text-base font-bold tracking-tight text-white flex items-center gap-2">
+                <span className="text-gray-400">Admin</span>
                 <span>Customer Data & Submissions</span>
                 <span className="text-[10px] uppercase font-bold tracking-wider bg-teal-500/20 text-teal-300 px-2 py-0.5 rounded-full border border-teal-500/30">
                   {orders.length} Submissions
