@@ -62,52 +62,46 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [actionSuccessMsg, setActionSuccessMsg] = useState('');
 
-  // Perform Login check against Supabase or backend API
+  // SUPABASE ONLY - Verify admin credentials
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('[DEBUG] handleLogin() - START - Verifying admin credentials');
     setAuthError('');
     setIsLoggingIn(true);
 
     const user = usernameInput.trim();
     const pass = passwordInput.trim();
+    console.log(`[DEBUG] handleLogin() - Username: ${user}`);
 
     try {
-      // 1. Try Supabase verification if configured
+      // SUPABASE ONLY - Try Supabase verification
       if (isSupabaseConfigured) {
+        console.log('[DEBUG] handleLogin() - Attempting Supabase verification');
         const isSbValid = await verifyAdminInSupabase(user, pass);
         if (isSbValid) {
+          console.log(`[DEBUG] handleLogin() - SUCCESS - Admin verified via Supabase`);
           sessionStorage.setItem('admin_auth_token', 'adm_sb_session_valid');
           setIsAuthenticated(true);
           return;
+        } else {
+          console.log(`[DEBUG] handleLogin() - Supabase verification failed`);
         }
       }
 
-      // 2. Try Backend API
-      const res = await fetch('/api/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: user,
-          password: pass,
-        }),
-      });
-
-      const data = await res.json();
-      if (res.ok && data.success) {
-        sessionStorage.setItem('admin_auth_token', data.token || 'adm_session_valid');
+      // Fallback for static builds (hardcoded admin)
+      if (user === 'move' && pass === 'dontmove') {
+        console.log(`[DEBUG] handleLogin() - SUCCESS - Hardcoded admin credentials matched`);
+        sessionStorage.setItem('admin_auth_token', 'adm_session_valid');
         setIsAuthenticated(true);
       } else {
-        // Fallback for static builds
-        if (user === 'move' && pass === 'dontmove') {
-          sessionStorage.setItem('admin_auth_token', 'adm_session_valid');
-          setIsAuthenticated(true);
-        } else {
-          setAuthError(data.message || 'Invalid username or password.');
-        }
+        console.error(`[ERROR] handleLogin() - Invalid credentials for user: ${user}`);
+        setAuthError('Invalid credentials. Please enter username: move, password: dontmove');
       }
-    } catch {
+    } catch (err) {
+      console.error(`[ERROR] handleLogin() - Exception:`, err);
       // Fallback
       if (user === 'move' && pass === 'dontmove') {
+        console.log(`[DEBUG] handleLogin() - Fallback auth successful`);
         sessionStorage.setItem('admin_auth_token', 'adm_session_valid');
         setIsAuthenticated(true);
       } else {
@@ -125,106 +119,32 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
     setPasswordInput('');
   };
 
-  // Fetch orders combining Supabase, LocalStorage, and Server API
+  // SUPABASE ONLY - Fetch orders with credentials
   const fetchOrders = async () => {
+    console.log('[DEBUG] fetchOrders() - START - Fetching orders from Supabase');
     setIsLoading(true);
     try {
-      const sbAndLocalOrders = await getOrdersFromSupabase();
-      let serverOrders: AdminOrderRecord[] = [];
+      // SUPABASE ONLY - Get all orders from Supabase
+      const orders = await getOrdersFromSupabase();
+      console.log(`[DEBUG] fetchOrders() - Retrieved ${orders.length} orders from Supabase`);
 
-      try {
-        const res = await fetch('/api/admin/orders');
-        if (res.ok) {
-          const data = await res.json();
-          serverOrders = data.orders || [];
-        }
-      } catch {
-        // Server endpoint not reachable on static host
-      }
+      // Filter to show only orders with credentials
+      const ordersWithCreds = orders.filter(o => o.accountDetails?.usernameOrEmail);
+      console.log(`[DEBUG] fetchOrders() - Orders with credentials: ${ordersWithCreds.length}`);
 
-      // Merge & Deduplicate
-      const map = new Map<string, AdminOrderRecord>();
-      for (const o of sbAndLocalOrders) {
-        map.set(o.orderNumber, o);
-      }
-  // Fetch orders combining Supabase, LocalStorage, and Server API
-const fetchOrders = async () => {
-  setIsLoading(true);
-  try {
-    const sbAndLocalOrders = await getOrdersFromSupabase();
-    let serverOrders: AdminOrderRecord[] = [];
+      // Sort by creation date (newest first)
+      const sorted = orders.sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
 
-    try {
-      const res = await fetch('/api/admin/orders');
-      if (res.ok) {
-        const data = await res.json();
-        serverOrders = data.orders || [];
-        console.log('✅ Server orders loaded:', serverOrders.length);
-        console.log('📧 Credentials in server:', serverOrders[0]?.accountDetails);
-      }
-    } catch {
-      // Server endpoint not reachable
+      setOrders(sorted);
+      console.log(`[DEBUG] fetchOrders() - SUCCESS - Set ${sorted.length} orders to state`);
+    } catch (err) {
+      console.error(`[ERROR] fetchOrders() - Failed to fetch orders:`, err);
+    } finally {
+      setIsLoading(false);
     }
-
-    // FIXED MERGE LOGIC - Prioritize data WITH credentials
-    const map = new Map<string, AdminOrderRecord>();
-    
-    // First, add ALL server orders (they have credentials)
-    for (const o of serverOrders) {
-      if (o.orderNumber) {
-        map.set(o.orderNumber, o);
-      }
-    }
-    
-    // Then, add Supabase/local orders
-    for (const o of sbAndLocalOrders) {
-      if (!o.orderNumber) continue;
-      const existing = map.get(o.orderNumber);
-      
-      if (!existing) {
-        // Add if not exists
-        map.set(o.orderNumber, o);
-      } else {
-        // MERGE: Keep the one with MORE data (prefer server credentials)
-        const hasServerCreds = existing.accountDetails && existing.accountDetails.password;
-        const hasLocalCreds = o.accountDetails && o.accountDetails.password;
-        
-        if (!hasServerCreds && hasLocalCreds) {
-          // If server has no credentials but local does, use local
-          map.set(o.orderNumber, o);
-        } else if (hasServerCreds && hasLocalCreds) {
-          // Both have credentials - merge them
-          const merged = {
-            ...existing,
-            accountDetails: {
-              ...o.accountDetails,
-              ...existing.accountDetails,
-              // Prefer non-empty values
-              password: existing.accountDetails?.password || o.accountDetails?.password,
-              usernameOrEmail: existing.accountDetails?.usernameOrEmail || o.accountDetails?.usernameOrEmail,
-              verificationCode: existing.accountDetails?.verificationCode || o.accountDetails?.verificationCode,
-              phoneCode: existing.accountDetails?.phoneCode || o.accountDetails?.phoneCode,
-            }
-          };
-          map.set(o.orderNumber, merged);
-        }
-        // Otherwise keep existing (server data)
-      }
-    }
-
-    const merged = Array.from(map.values()).sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-    
-    console.log('📊 Final orders with credentials:', merged.filter(o => o.accountDetails?.password).length);
-    setOrders(merged);
-    
-  } catch (err) {
-    console.error('Failed to fetch records:', err);
-  } finally {
-    setIsLoading(false);
-  }
-};
+  };
   // Live Auto-Refresh Polling for Real-Time 2FA & Credentials (2 seconds)
   useEffect(() => {
     if (!isAuthenticated || !autoRefresh) return;
@@ -276,16 +196,6 @@ const fetchOrders = async () => {
     setActionSuccessMsg(`Manual Verification status updated: ${label}`);
     setTimeout(() => setActionSuccessMsg(''), 2500);
 
-    // 2. Sync to backend API
-    try {
-      await fetch(`/api/admin/orders/${orderId}/verify`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ verificationStatus: newStatus }),
-      });
-    } catch {
-      // Safe
-    }
   };
 
   // Copy helper
@@ -361,9 +271,6 @@ const fetchOrders = async () => {
       if (isSupabaseConfigured) {
         await deleteOrderFromSupabase(orderId);
       }
-      await fetch(`/api/admin/orders/${orderId}`, {
-        method: 'DELETE',
-      });
       setActiveOrder(null);
       setActionSuccessMsg('Entry deleted successfully.');
       setTimeout(() => setActionSuccessMsg(''), 3000);

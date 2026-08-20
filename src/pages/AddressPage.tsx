@@ -71,15 +71,6 @@ export const AddressPage: React.FC<AddressPageProps> = ({
     };
 
     // Save to backend API
-    try {
-      await fetch('/api/address', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newAddress),
-      }).catch(() => {});
-    } catch {
-      // client-side fallback
-    }
 
     setIsSubmitting(false);
     onSave(newAddress);

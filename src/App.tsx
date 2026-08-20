@@ -270,28 +270,7 @@ export default function App() {
       });
 
       // 2. Server persistence fallback
-      const response = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderNumber: generatedOrderNum,
-          productId: product.id,
-          productTitle: product.title,
-          deliveryType,
-          accountDetails: activeAccount || undefined,
-          pickupPoint: selectedPickupPoint,
-          shippingAddress: selectedAddress,
-          paymentMethod: selectedPayment,
-          pricing: pricingBreakdown,
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setOrderNumber(data.order?.orderNumber || generatedOrderNum);
-      } else {
-        setOrderNumber(generatedOrderNum);
-      }
+      setOrderNumber(generatedOrderNum);
     } catch {
       setOrderNumber(generatedOrderNum);
     } finally {

