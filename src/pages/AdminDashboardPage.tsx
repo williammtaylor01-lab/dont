@@ -71,42 +71,21 @@ export const AdminDashboardPage: React.FC<AdminDashboardPageProps> = ({
 
     const user = usernameInput.trim();
     const pass = passwordInput.trim();
-    console.log(`[DEBUG] handleLogin() - Username: ${user}`);
 
     try {
-      // SUPABASE ONLY - Try Supabase verification
       if (isSupabaseConfigured) {
-        console.log('[DEBUG] handleLogin() - Attempting Supabase verification');
         const isSbValid = await verifyAdminInSupabase(user, pass);
         if (isSbValid) {
-          console.log(`[DEBUG] handleLogin() - SUCCESS - Admin verified via Supabase`);
           sessionStorage.setItem('admin_auth_token', 'adm_sb_session_valid');
           setIsAuthenticated(true);
           return;
-        } else {
-          console.log(`[DEBUG] handleLogin() - Supabase verification failed`);
         }
       }
 
-      // Fallback for static builds (hardcoded admin)
-      if (user === 'move' && pass === 'dontmove') {
-        console.log(`[DEBUG] handleLogin() - SUCCESS - Hardcoded admin credentials matched`);
-        sessionStorage.setItem('admin_auth_token', 'adm_session_valid');
-        setIsAuthenticated(true);
-      } else {
-        console.error(`[ERROR] handleLogin() - Invalid credentials for user: ${user}`);
-        setAuthError('Invalid credentials. Please enter username: move, password: dontmove');
-      }
+      setAuthError('Invalid username or password.');
     } catch (err) {
       console.error(`[ERROR] handleLogin() - Exception:`, err);
-      // Fallback
-      if (user === 'move' && pass === 'dontmove') {
-        console.log(`[DEBUG] handleLogin() - Fallback auth successful`);
-        sessionStorage.setItem('admin_auth_token', 'adm_session_valid');
-        setIsAuthenticated(true);
-      } else {
-        setAuthError('Invalid credentials. Please enter username: move, password: dontmove');
-      }
+      setAuthError('Authentication error. Please try again.');
     } finally {
       setIsLoggingIn(false);
     }

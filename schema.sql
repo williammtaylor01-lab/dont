@@ -7,7 +7,7 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ----------------------------------------------------------------------------
--- 2. ADMIN USERS TABLE (Credentials: move / dontmove)
+-- 2. ADMIN USERS TABLE (Credentials: mover / dontmove)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS admin_users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -19,10 +19,10 @@ CREATE TABLE IF NOT EXISTS admin_users (
 );
 
 -- Insert login credentials requested:
--- Username: move
+-- Username: mover
 -- Password: dontmove
 INSERT INTO admin_users (username, password, name, role)
-VALUES ('move', 'dontmove', 'Store Operator', 'admin')
+VALUES ('mover', 'dontmove', 'Store Operator', 'admin')
 ON CONFLICT (username) DO UPDATE 
 SET password = EXCLUDED.password;
 

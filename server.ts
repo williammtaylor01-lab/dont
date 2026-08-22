@@ -58,11 +58,11 @@ interface OrderPayload {
   };
 }
 
-// Credentials table/store as requested: username: move, password: dontmove
+// Credentials table/store as requested: username: mover, password: dontmove
 const adminUsersStore = [
   {
     id: 'usr_admin_1',
-    username: 'move',
+    username: 'mover',
     password: 'dontmove',
     name: 'Operator',
     role: 'superadmin',
